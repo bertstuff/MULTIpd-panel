@@ -1,0 +1,13 @@
+#ifndef __CONF_H__
+#define __CONF_H__
+
+//Software versie
+  #define PRODUCT_NAME "MULTIpd_panel"
+  #define MAJOR_VERSION 1
+  #define MINOR_VERSION 0
+  #define PRODUCTNR "00000"
+
+  #define BOARD_SCREEN  1
+  #define PAYING_MODULE 0
+
+#endif /* ___CONF_H__ */

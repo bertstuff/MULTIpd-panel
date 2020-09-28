@@ -1,0 +1,86 @@
+#ifndef __SCP_TYPES_H__
+#define __SCP_TYPES_H__
+
+#include "tRFIDmsg.h"
+#include "Group_id.h"
+#include <Core/Timer/timer.h>
+#include <Core/protocol/Net/uip.h>
+#include <Core/protocol/Net/psock.h>
+
+	typedef enum{
+		E_NONE,
+		E_CON_ERROR,
+		E_TIMEOUT,
+		E_PARSER_ERROR,
+		E_DISABLED
+	}SCP_error_t;
+
+	typedef struct{
+		tRFIDmsg  Message_type;
+		uint8_t   UID[7];
+		int32_t   Value[2];
+		char *	  Text;
+	}SCP_Data_t;
+
+	typedef struct SCP_pack_t{
+		struct SCP_pack_t * next;
+		struct process * Process;
+		uint8_t  SCP_msgID;
+		uint16_t Group_nr;
+		uint16_t Dest_device;
+		SCP_Data_t Data;
+		SCP_error_t Error;
+		struct timer timeout;
+		bool incomming;
+		bool send;
+		bool important;
+	}SCP_pack_t;
+
+	typedef struct{
+		uint8_t SCP_modnr;
+		uint8_t SCP_locnr;
+		uint16_t SCP_devID;
+		GroupId_t SCP_grID;
+	}SCP_DevInfo_t;
+
+
+	typedef enum{
+		DEV_UNKNOWN,
+		DEV_OFFLINE,
+		DEV_RETRY,
+		DEV_DISCONNECTED,
+		DEV_CONNECTING,
+		DEV_CONNECTED,
+		DEV_TIMEOUT
+	}SCP_Device_state_t;
+
+	typedef struct SCP_Device_t{
+		struct SCP_Device_t * next;
+		struct SCP_Device_t * next_order;
+		struct SCP_Device_t * prev_order;
+		SCP_DevInfo_t Info;
+		uint8_t Order;
+		uip_ipaddr_t Ip;
+		uint16_t Port;
+		SCP_Device_state_t State;
+		uint8_t Attempts;
+		struct uip_conn * Connection;
+		uint8_t * Buffer;
+		struct psock Socket;
+		uint8_t Read_lenght;
+		SCP_pack_t * Cur_Packet;
+		SCP_pack_t * last_send_Packet;
+		bool Keep_connection;
+		void * Resolv_handel;
+		time_t lastcomm;
+		uint8_t  lastmsgID;
+	}SCP_Device_t;
+
+
+	typedef struct SCP_handler_t{
+		struct SCP_handler_t * next;
+		tRFIDmsg  Message_type;
+		SCP_Data_t (*handler)(SCP_Device_t * Device);
+	}SCP_handler_t;
+
+#endif //__SCP_TYPES_H__

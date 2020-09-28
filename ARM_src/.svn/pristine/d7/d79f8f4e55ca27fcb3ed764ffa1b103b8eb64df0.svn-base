@@ -1,0 +1,75 @@
+#ifndef __DEF_CONF_H__
+#define __DEF_CONF_H__
+  #include <config.h>
+
+
+//function defines
+  #define VALUE_TO_STRING(x) #x
+  #define VALUE(x) VALUE_TO_STRING(x)
+  #define VERSION_STRING "V" VALUE(MAJOR_VERSION) "." VALUE(MINOR_VERSION)
+
+//check settings
+#ifndef PRODUCT_NAME
+	#error No product name set
+#endif
+#ifndef MAJOR_VERSION
+	#error No major version set
+#endif
+#ifndef MINOR_VERSION
+	#error No Minor version set
+#endif
+#ifndef PRODUCTNR
+	#error No product number set
+#endif
+
+
+//LOG
+#ifndef ERROR_LOG_ENABLE //log to file functions active
+	#define ERROR_LOG_ENABLE 1
+#endif
+
+#ifndef SERIAL_TERMINAL_ENABLE //enable serial debug output
+	#define SERIAL_TERMINAL_ENABLE 1
+#endif
+
+#ifndef TCP_TERMINAL_ENABLE //enable tcp debug output
+	#define TCP_TERMINAL_ENABLE 0
+#endif
+
+////board setup defines////
+
+#ifndef BOARD_SD_CARD // SD card present
+	#define BOARD_SD_CARD 1
+#endif
+
+#ifndef BOARD_SCREEN // SREEN present
+	#define BOARD_SCREEN 1
+#endif
+
+////enable software modules////
+
+#ifndef RESERVATION_MODULE //Reservation functions available
+	#define RESERVATION_MODULE 0
+#endif
+
+#ifndef PAYING_MODULE //Paying thread available
+	#define PAYING_MODULE 0
+#endif
+
+#ifndef MENU_MODULE //Menu functions available
+	#define MENU_MODULE 0
+#endif
+
+#ifndef SERVICE_BUTTON_MODULE //Button for service screen available
+	#define SERVICE_BUTTON_MODULE 0
+#endif
+
+#ifndef AMS_MODULE //AMS active
+	#define AMS_MODULE 1
+#endif
+
+#ifndef SERVICE_PASS_MODULE //Enter service menu with pass
+	#define SERVICE_PASS_MODULE 0
+#endif
+
+#endif /* ___CONF_H__ */

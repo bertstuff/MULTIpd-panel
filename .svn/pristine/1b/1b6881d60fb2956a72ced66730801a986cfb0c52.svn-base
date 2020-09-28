@@ -1,0 +1,19 @@
+[NL]
+S_No_notifications=Geen meldingen
+S_Enter_energy_point_number=Voer Stroompaal nummer in:
+S_Energy_point=Stroompaal
+S_Accept=Accepteren
+S_State=Status
+S_Disabled=Uitgeschakeld
+S_Enabled=Ingeschakeld
+S_Max_current=Max stroom
+S_Current=Huidige stroom
+S_Power=Vermogen
+S_Back=Terug
+S_Enable=Inschakelen
+S_Choose_language=Kies uw taal:
+S_Language=Taal
+S_Dutch=Nederlands
+S_English=Engels
+S_German=Duits
+S_Energy_point_does_not_exist=Ingevoerde stroompaal\r\nbestaat niet

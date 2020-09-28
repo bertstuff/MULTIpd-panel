@@ -1,0 +1,145 @@
+#include <Board/Def_config.h>
+#if(MENU_MODULE == 1)
+
+#include <Core/protocol/Net/SCP/SCP_Comm.h>
+#include <COre/protocol/Net/AMS/AMS.h>
+#include <Core/protocol/Net/uip.h>
+#include <Core/Process/process.h>
+#include <Core/Thread/pt.h>
+#include <Core/Type/type.h>
+#include <Device/I2C/BUTTONS/Keypad_Parser.h>
+#include <Device/I2C/Edip_240B/EDIP_240B_Display.h>
+#include <Device/I2C/Edip_240B/EDIP_240B_Text.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <Screen/Menu/SCR_Menu_func.h>
+#include <Screen/Menu/SCR_Menu_handler.h>
+#include <Screen/SCR_Init.h>
+#include <Screen/SCR_Text.h>
+
+
+PT_THREAD(SCR_net_handler(process_event_t ev, process_data_t data));
+void SCR_net_statistics(bool enter_menu);
+void SCR_net_SCP(bool enter_menu);
+void SCR_net_EJ(bool enter_menu);
+void SCR_net_AMS(bool enter_menu);
+
+void SCR_Net_Menu(struct Menu_t * Menu){
+	struct Menu_t *	Menu_net;
+
+	struct Menu_item_t * Item_net;
+	struct Menu_item_t * Item_statistics,* Item_SCP, *Item_EJ;
+
+	Item_net = menu_add_menu_item(Menu,REF_TEXT(S_Network));
+
+	Menu_net = menu_new_menu(REF_TEXT(S_Network), Item_net);
+	menu_set_menu_auth(Menu_net,AUTH_MANUFACTURE | AUTH_DEBUG);
+	Item_statistics = menu_add_menu_item(Menu_net,REF_TEXT(S_Statistics));
+	Item_SCP = menu_add_menu_item(Menu_net,REF_TEXT(S_SCP));
+	Item_EJ = menu_add_menu_item(Menu_net,REF_TEXT(S_E_journal));
+
+	menu_new_custom_menu(REF_TEXT(S_Statistics), SCR_net_handler, SCR_net_statistics, Item_statistics);
+	menu_new_custom_menu(REF_TEXT(S_SCP), SCR_net_handler, SCR_net_SCP, Item_SCP);
+	menu_new_custom_menu(REF_TEXT(S_E_journal), SCR_net_handler, SCR_net_EJ, Item_EJ);
+#if(AMS_MODULE == 1)
+	struct Menu_item_t * Item_AMS;
+	Item_AMS = menu_add_menu_item(Menu_net,REF_TEXT(S_AMS));
+	menu_new_custom_menu(REF_TEXT(S_AMS), SCR_net_handler, SCR_net_AMS, Item_AMS);
+#endif
+}
+
+
+PT_THREAD(SCR_net_handler(process_event_t ev, process_data_t data)){
+	PT_BEGIN(&menu_pt);
+	if(keypad_pressed(ev)){
+		uint8_t button= *((uint8_t *)data);
+		if(button == C_RETURN){
+			SCR_leave_menu(H_MENU_CANCEL);
+			PT_EXIT(&menu_pt);
+		}
+	}
+	PT_END(&menu_pt);
+}
+
+void SCR_net_statistics(bool enter_menu){
+	Point_t point = {.x=120,.y=10};
+
+	Edip_Set_Font(&StdFont);
+	Edip_Clear_Display();
+	Edip_Draw_String(point,"Sent: %d Recv: %d",uip_stat.ip.sent,uip_stat.ip.recv);
+	point.y += 15;
+	Edip_Draw_String(point,"Forwarded: %d Droped: %d",uip_stat.ip.forwarded,uip_stat.ip.drop);
+	point.y += 15;
+	Edip_Draw_String(point,"Ip header error: %d",uip_stat.ip.vhlerr);
+	point.y += 15;
+	Edip_Draw_String(point,"Ip lenght error: %d",((uip_stat.ip.hblenerr << 8) | uip_stat.ip.lblenerr));
+	point.y += 15;
+	Edip_Draw_String(point,"Ip fragment drop: %d",uip_stat.ip.fragerr);
+	point.y += 15;
+	Edip_Draw_String(point,"Ip checksum drop: %d",uip_stat.ip.chkerr);
+	point.y += 15;
+	Edip_Draw_String(point,"Ip protocol drop: %d",uip_stat.ip.protoerr);
+}
+
+void SCR_net_SCP(bool enter_menu){
+	Point_t point = {.x=120,.y=5};
+	SCP_DevInfo_t devinfo;
+
+	devinfo = SCP_Get_device_info();
+
+	Edip_Clear_Display();
+	Edip_Set_Font(&H1Font);
+	Edip_Draw_String(point,"SCP");
+	point.y += 30;
+	Edip_Set_Font(&StdFont);
+	//TODO: fix menu
+	/*Edip_Draw_String(point,"Server IP: %d.%d.%d.%d",uip_ipaddr_to_quad(&g_Server_ipaddr));
+	point.y += 15;
+	Edip_Draw_String(point,"Server Poort: %d",g_Server_port);
+	point.y += 15;*/
+	Edip_Draw_String(point,"Device ID: %d",devinfo.SCP_devID);
+	point.y += 15;
+	Edip_Draw_String(point,"Location Nr: %d",devinfo.SCP_locnr);
+	point.y += 15;
+	Edip_Draw_String(point,"Module Nr: %d",devinfo.SCP_modnr);
+	point.y += 15;
+	Edip_Draw_String(point,"Group Nr: %d",devinfo.SCP_grID);
+	return;
+}
+
+void SCR_net_EJ(bool enter_menu){
+	Point_t point = {.x=120,.y=5};
+
+	extern uip_ipaddr_t g_EJ_Server_ipaddr;
+	extern uint16_t g_EJ_Server_port;
+
+	Edip_Clear_Display();
+	Edip_Set_Font(&H1Font);
+	Edip_Draw_String(point,"E-journal");
+	point.y += 30;
+	Edip_Set_Font(&StdFont);
+	Edip_Draw_String(point,"Server IP: %d.%d.%d.%d",uip_ipaddr_to_quad(&g_EJ_Server_ipaddr));
+	point.y += 15;
+	Edip_Draw_String(point,"Server Poort: %d",g_EJ_Server_port);
+	return;
+}
+#ifdef AMS_MODULE
+void SCR_net_AMS(bool enter_menu){
+	Point_t point = {.x=120,.y=5};
+	extern uip_ipaddr_t g_AMS_Server_ipaddr;
+	extern uint16_t g_AMS_Server_port;
+
+	Edip_Clear_Display();
+	Edip_Set_Font(&H1Font);
+	Edip_Draw_String(point,"AMS");
+	point.y += 30;
+	Edip_Set_Font(&StdFont);
+	Edip_Draw_String(point,"Server IP: %d.%d.%d.%d",uip_ipaddr_to_quad(&g_AMS_Server_ipaddr));
+	point.y += 15;
+	Edip_Draw_String(point,"Server Poort: %d",g_AMS_Server_port);
+	return;
+}
+#endif
+
+
+#endif

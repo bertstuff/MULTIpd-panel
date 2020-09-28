@@ -1,0 +1,19 @@
+[DE]
+S_No_notifications=Keine Benachrichtigungen
+S_Enter_energy_point_number=Gib die Energiepunktnummer ein
+S_Energy_point=Energiepunkt
+S_Accept=Accept
+S_State=Status
+S_Disabled=Deaktiviert
+S_Enabled=Aktiviert
+S_Max_current=Maximalstrom
+S_Current=Strom
+S_Power=Energie
+S_Back=zuruck
+S_Enable=Aktivieren
+S_Choose_language=Wahle eine Sprache:
+S_Language=Sprache
+S_Dutch=Niederlandisch
+S_English=Englisch
+S_German=Deutsch
+S_Energy_point_does_not_exist=Eingegeben Energiepunkt\r\nexistiert nicht

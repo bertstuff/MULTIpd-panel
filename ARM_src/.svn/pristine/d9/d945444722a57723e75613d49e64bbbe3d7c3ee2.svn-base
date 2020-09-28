@@ -1,0 +1,519 @@
+#include "VK80.h"
+#include <Driver/include/lpc17xx_uart.h>
+#include <Driver/include/lpc17xx_pinsel.h>
+#include <Core/protocol/FAT/ff.h>
+#include <Core/Debug/Error_check.h>
+#include <Core/Process/process.h>
+#define DISABLE_PRINTER 0
+
+
+VK80_Paper_status_t VK80_status;
+UART_select_t VK80_Uart;
+bool VK80_new_data_received = false;
+char VK80_last_received;
+
+////prototypes//////
+Status VK80_Init_printer(void);
+void VK80_uart_init(UART_select_t Com);
+Status VK80_Set_Font_Bold(bool state);
+Status VK80_Set_Font_Underline(VK80_Thick_t state);
+Status VK80_Set_Font_Double_strike(bool state);
+Status VK80_Set_Font_Size(VK80_Size_t W, VK80_Size_t H);
+Status VK80_Barcode_HRI_position(VK80_HRI_t pos);
+Status VK80_Barcode_HRI_font(bool Font_A);
+Status VK80_Barcode_height(uint8_t height);
+Status VK80_Barcode_print(VK80_BC_Format_t Format, char * data);
+Status VK80_QRcode_encoding(void);
+Status VK80_QRcode_dot_size(uint8_t dotsize);
+Status VK80_QRcode_size(void);
+Status VK80_QRcode_correction_level(void);
+Status VK80_QRcode_store_data(char * data);
+Status VK80_QRcode_print(void);
+Status VK80_DATAMATRIX_encoding(void);
+Status VK80_DATAMATRIX_store_data(char * data);
+Status VK80_DATAMATRIX_print(void);
+Status VK80_Send(char * buffer ,uint16_t lenght);
+Status VK80_Receive(char * buffer);
+
+
+
+////global functions//////
+Status  VK80_Init(UART_select_t Com){
+	Status dev_stat;
+	VK80_Uart = Com;
+	VK80_uart_init(Com);
+	error_check_add(TYPE_ENUM,&VK80_status,ERROR_VK80);
+	error_check_lower_priority(ERROR_TG2460H,S_PAPER_LOW);
+	error_check_lower_priority(ERROR_TG2460H,S_PAPER_EMPTY);
+	dev_stat = VK80_Init_printer();
+	if(dev_stat == ERROR){return ERROR;}
+	VK80_Get_paper_status();
+	return dev_stat;
+}
+
+void VK80_new_data(char data){
+	VK80_last_received = data;
+	VK80_new_data_received = true;
+	return;
+}
+
+void VK80_uart_init(UART_select_t Com){
+	UART_config_type Config;
+	Config.New_data = VK80_new_data;
+	Config.settings.Baud_rate = 19200;
+	Config.settings.Databits = UART_DATABIT_8;
+	Config.settings.Stopbits = UART_STOPBIT_1;
+	Config.settings.Parity = UART_PARITY_NONE;
+	Config.Auto_CTS = false;
+	Config.Auto_RTS = false;
+
+	if(UART_poort_Init(Com,Config) == ERROR){
+		printf("VK80: com error\r\n");
+	}
+
+}
+
+void VK80_Set_font(VK80_Font_t* Font){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x21;
+	if(Font->Font == FONTA){
+		buffer[2] = 0;
+	}else{
+		buffer[2] = 1;
+	}
+
+	VK80_Send(buffer,sizeof(buffer));
+	VK80_Set_Font_Bold(Font->F_bold);
+	VK80_Set_Font_Underline(Font->F_underline);
+	VK80_Set_Font_Double_strike(Font->F_double_strike);
+	VK80_Set_Font_Size(Font->Width, Font->Height);
+	VK80_Set_Font_cpi(Font->cpi);
+	return;
+}
+
+Status VK80_Print_string(char * format,...){
+  char buffer[300];
+  uint16_t bytes;
+
+  va_list args;
+  va_start (args, format);
+  bytes = vsnprintf (buffer, 300, format, args);
+  va_end (args);
+#if (DISABLE_PRINTER == 1)
+  printf("%s\r\n",buffer);
+#endif
+  return VK80_Send(buffer, bytes);
+}
+
+VK80_Paper_status_t VK80_Get_paper_status(void){
+	char buffer[2];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x76;
+
+	VK80_Send(buffer,sizeof(buffer));
+#if (DISABLE_PRINTER == 0)
+	if(VK80_Receive(buffer) == ERROR){
+		VK80_status = S_DEVICE_UNAVAILABLE;
+		return S_DEVICE_UNAVAILABLE;
+	}
+#else
+	return S_PAPER_OK;
+#endif
+
+	if(buffer[0] & (1 << 2)){
+		VK80_status = S_PAPER_EMPTY;
+		return S_PAPER_EMPTY;
+	} else if(buffer[0] & (1 << 0)){
+		VK80_status = S_PAPER_LOW;
+		return S_PAPER_LOW;
+	}
+	VK80_status = S_PAPER_OK;
+	return S_PAPER_OK;
+}
+
+Status VK80_Cut_paper(void){
+	VK80_Print_string("\r\n\r\n");
+	char buffer[2];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x69;
+
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Print_Barcode(VK80_Barcode_t Barcode, char * Data_str){
+	Status Stat;
+
+	Stat = VK80_Barcode_HRI_position(Barcode.Position_HRI);
+	Stat |= VK80_Barcode_HRI_font(Barcode.Font_A);
+	Stat |= VK80_Barcode_height(Barcode.Height);
+	Stat |= VK80_Barcode_print(Barcode.Format, Data_str);
+	return Stat;
+}
+
+Status VK80_Print_QRcode(VK_QRcode Qrcode, char * Data_str){
+	Status Stat;
+	Stat = VK80_QRcode_encoding();
+	Stat |= VK80_QRcode_dot_size(Qrcode.dot_size);
+	Stat |= VK80_QRcode_size();
+	Stat |= VK80_QRcode_correction_level();
+	Stat |= VK80_QRcode_store_data(Data_str);
+	Stat |= VK80_QRcode_print();
+	return Stat;
+}
+
+Status VK80_DATAMATRIX_QRcode(VK_QRcode Qrcode, char * Data_str){
+	Status Stat;
+	Stat = VK80_DATAMATRIX_encoding();
+	Stat |= VK80_DATAMATRIX_store_data(Data_str);
+	Stat |= VK80_DATAMATRIX_print();
+	return Stat;
+}
+
+Status VK80_left_margin(double inch){
+	char buffer[4];
+
+	uint16_t distance = (inch * 200);
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x4C;
+	buffer[2] = distance & 0xFF;
+	buffer[3] = (distance >> 8) & 0xFF;
+
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_absolute_position(double inch){
+	char buffer[4];
+
+	uint16_t distance = (inch * 200);
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x24;
+	buffer[2] = distance & 0xFF;
+	buffer[3] = (distance >> 8) & 0xFF;
+
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Download_BMP_Logo(uint8_t refnr,  char *filename){
+	char buffer[3];
+	FATFS Fatfs;
+	FRESULT rc;
+	FIL file;
+	UINT br;
+	char Buffer[50];
+	Status Stat;
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x2A;
+	buffer[2] = refnr;
+	Stat = VK80_Send(buffer,sizeof(buffer));
+
+	 rc = f_mount(&Fatfs,"SD1:",1);
+	 if(rc != FR_OK){
+	   printf("VK80: cant mount sd card %d\r\n",rc);
+	   return ERROR;
+	 }
+
+	 rc = f_open( &file, filename, FA_OPEN_EXISTING | FA_READ);
+	 if(rc != FR_OK)
+	 {
+	   printf("VK80: Opening file error %d\r\n",rc);
+	   return ERROR;
+	 }
+	 while(1){
+		 rc = f_read (&file,Buffer,50,&br);
+		 Stat |= VK80_Send(&Buffer[0],br);
+		 if(br < 50){
+			 break;
+		 }
+	 }
+	 return Stat;
+}
+
+
+Status VK80_Print_Logo(uint8_t refnr){
+	char buffer[4];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x70;
+	buffer[2] = refnr;
+	buffer[3] = 0;
+
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+//////////////////local functions////////////////////////////
+
+Status VK80_Init_printer(void){
+	char buffer[2];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x40;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Set_Font_Bold(bool state){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x45;
+	buffer[2] = (state == true)? 1:0;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Set_Font_Underline(VK80_Thick_t state){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x2D;
+	buffer[2] = state;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Set_Font_Double_strike(bool state){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x47;
+	buffer[2] = (state == true)? 1:0;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Set_Font_Size(VK80_Size_t W, VK80_Size_t H){
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x21;
+	buffer[2] = H  | (W << 4);
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Set_Font_cpi(uint8_t cpi){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0xc1;
+	buffer[2] = cpi;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Barcode_HRI_position(VK80_HRI_t pos){
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x48;
+	buffer[2] = pos;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Barcode_HRI_font(bool Font_A){
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x66;
+	buffer[2] = (Font_A == true)? 0:1;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+
+Status VK80_Barcode_height(uint8_t height){
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x68;
+	buffer[2] = height;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_Barcode_print(VK80_BC_Format_t Format, char * data){
+	Status Stat;
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x6B;
+	buffer[2] = Format;
+	Stat = VK80_Send(buffer,sizeof(buffer));
+	Stat |= VK80_Send(data,strlen(data) + 1);
+	return Stat;
+}
+
+Status VK80_QRcode_encoding(void){
+	char buffer[8];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x28;
+	buffer[2] = 0x6B;
+	buffer[3] = 0x03;
+	buffer[4] = 0x00;
+	buffer[5] = 0x31;
+	buffer[6] = 0x41;
+	buffer[7] = 0x00;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_QRcode_dot_size(uint8_t dotsize){
+	char buffer[8];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x28;
+	buffer[2] = 0x6B;
+	buffer[3] = 0x03;
+	buffer[4] = 0x00;
+	buffer[5] = 0x31;
+	buffer[6] = 0x42;
+	buffer[7] = dotsize;//2..24
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_QRcode_size(void){
+	char buffer[8];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x28;
+	buffer[2] = 0x6B;
+	buffer[3] = 0x03;
+	buffer[4] = 0x00;
+	buffer[5] = 0x31;
+	buffer[6] = 0x43;
+	buffer[7] = 0x00;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_QRcode_correction_level(void){
+	char buffer[8];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x28;
+	buffer[2] = 0x6B;
+	buffer[3] = 0x03;
+	buffer[4] = 0x00;
+	buffer[5] = 0x31;
+	buffer[6] = 0x45;
+	buffer[7] = 0x04;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_QRcode_store_data(char * data){
+	Status Stat;
+	uint16_t lenght =  strlen(data);
+	char buffer[8];
+	lenght += 5;
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x28;
+	buffer[2] = 0x6B;
+	buffer[3] = lenght;
+	buffer[4] = (lenght >> 8);
+	buffer[5] = 0x31;
+	buffer[6] = 0x50;
+	buffer[7] = 0x31;
+	Stat = VK80_Send(buffer,sizeof(buffer));
+	Stat |= VK80_Send(data,strlen(data) + 2);
+	return Stat;
+}
+
+Status VK80_QRcode_print(void){
+	char buffer[8];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x28;
+	buffer[2] = 0x6B;
+	buffer[3] = 0x03;
+	buffer[4] = 0x00;
+	buffer[5] = 0x31;
+	buffer[6] = 0x51;
+	buffer[7] = 0x31;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_DATAMATRIX_encoding(void){
+	char buffer[8];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x28;
+	buffer[2] = 0x6B;
+	buffer[3] = 0x03;
+	buffer[4] = 0x00;
+	buffer[5] = 0x33;
+	buffer[6] = 0x41;
+	buffer[7] = 0x00;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+Status VK80_DATAMATRIX_store_data(char * data){
+	Status Stat;
+	uint16_t lenght =  strlen(data);
+	char buffer[8];
+	lenght += 5;
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x28;
+	buffer[2] = 0x6B;
+	buffer[3] = lenght;
+	buffer[4] = (lenght >> 8);
+	buffer[5] = 0x33;
+	buffer[6] = 0x50;
+	buffer[7] = 0x33;
+	Stat = VK80_Send(buffer,sizeof(buffer));
+	Stat |= VK80_Send(data,strlen(data) + 2);
+	return Stat;
+}
+
+Status VK80_DATAMATRIX_print(void){
+	char buffer[8];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x28;
+	buffer[2] = 0x6B;
+	buffer[3] = 0x03;
+	buffer[4] = 0x00;
+	buffer[5] = 0x33;
+	buffer[6] = 0x51;
+	buffer[7] = 0x33;
+	return VK80_Send(buffer,sizeof(buffer));
+}
+
+
+
+Status VK80_Send(char * buffer ,uint16_t lenght){
+	uint32_t Bytes_send = 0 ;
+#if (DISABLE_PRINTER == 0)
+	Bytes_send = UART_send(VK80_Uart,(uint8_t *) buffer, lenght);
+#else
+	Bytes_send = lenght;
+#endif
+  if(lenght != Bytes_send){
+	  printf("VK80: Printer timeout\r\n");
+	  VK80_status = S_DEVICE_UNAVAILABLE;
+	  return ERROR;
+  }
+  VK80_new_data_received = false;
+  return SUCCESS;
+}
+
+Status VK80_Receive(char * buffer){
+	uint16_t timeout = 0;
+	//Bytes_Received = UART_Receive((LPC_UART_TypeDef *)LPC_UART1,(uint8_t *) buffer,lenght, BLOCKING);
+	static struct process *tmp_current;
+	tmp_current = PROCESS_CURRENT();
+	while(!VK80_new_data_received){
+		//process_poll(&Uart_process);
+		process_run();
+		timeout++;
+		if(timeout == 0){
+			process_current = tmp_current;
+			printf("VK80: Printer timeout\r\n");
+			return ERROR;
+		}
+	}
+	process_current = tmp_current;
+	buffer[0] = VK80_last_received;
+
+	return SUCCESS;
+}
+

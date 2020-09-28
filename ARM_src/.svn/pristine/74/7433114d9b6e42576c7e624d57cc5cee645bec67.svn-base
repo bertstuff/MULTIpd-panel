@@ -1,0 +1,50 @@
+/**
+ * \addtogroup device
+ * @{
+ */
+
+/**
+ * \defgroup Servicepin
+ *
+ * API to check the service pin on the board
+ *
+ * @{
+ */
+
+/**
+ * \file
+ *        This file contains functions to check the service pin
+ * \author
+ *         Mark van der Heijden <m.vanderheijden@custommate.eu>
+ *
+ */
+#ifndef SERVICEPIN
+#define SERVICEPIN
+
+  /* Include files */
+  #include <driver/include/lpc17xx_gpio.h>
+  #include <stdbool.h>
+
+  /* Global Types */
+  #define DIR_INPUT 0
+  #define SERVICE_PORT 2
+  #define SERVICE_PIN (1<<12)
+
+  /* Global prototypes */
+
+/*
+ * @brief get status of service pin
+ * @return status
+ */
+bool Servicepin(void);
+
+/*
+ * @set pin as output and control led
+ */
+void set_Servicepin_led(bool state);
+
+#endif
+ /**
+ * 	@}
+ * @}
+ **/

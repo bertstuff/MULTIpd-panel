@@ -1,0 +1,344 @@
+#include "TG2460H.h"
+#include <Driver/include/lpc17xx_uart.h>
+#include <Driver/include/lpc17xx_pinsel.h>
+#include <Core/protocol/FAT/ff.h>
+#include <Core/Debug/Error_check.h>
+#include <Core/Process/process.h>
+#define DISABLE_PRINTER 0
+
+
+TG2460H_Paper_status_t TG2460H_status;
+UART_select_t TG2460H_Uart;
+bool TG2460H_new_data_received = false;
+char TG2460H_last_received;
+
+////prototypes//////
+Status TG2460H_Init_printer(void);
+void TG2460H_uart_init(UART_select_t Com);
+Status TG2460H_Set_Font_Bold(bool state);
+Status TG2460H_Set_Font_Underline(TG2460H_Thick_t state);
+Status TG2460H_Set_Font_Double_strike(bool state);
+Status TG2460H_Set_Font_Size(TG2460H_Size_t W, TG2460H_Size_t H);
+Status TG2460H_Barcode_HRI_position(TG2460H_HRI_t pos);
+Status TG2460H_Barcode_HRI_font(bool Font_A);
+Status TG2460H_Barcode_height(uint8_t height);
+Status TG2460H_Barcode_print(TG2460H_BC_Format_t Format, char * data);
+Status TG2460H_Send(char * buffer ,uint16_t lenght);
+Status TG2460H_Receive(char * buffer);
+
+
+////global functions//////
+Status  TG2460H_Init(UART_select_t Com){
+	Status dev_stat;
+	TG2460H_Uart = Com;
+	TG2460H_uart_init(Com);
+	error_check_add(TYPE_ENUM,&TG2460H_status,ERROR_TG2460H);
+	error_check_lower_priority(ERROR_TG2460H,S_PAPER_LOW);
+	error_check_lower_priority(ERROR_TG2460H,S_PAPER_EMPTY);
+	dev_stat = TG2460H_Init_printer();
+	if(dev_stat == ERROR){return ERROR;}
+	TG2460H_Get_paper_status();
+	return dev_stat;
+}
+void TG2460H_new_data(char data){
+	TG2460H_last_received = data;
+	TG2460H_new_data_received = true;
+	return;
+}
+
+void TG2460H_uart_init(UART_select_t Com){
+	UART_config_type Config;
+	Config.New_data = TG2460H_new_data;
+	Config.settings.Baud_rate = 115200;
+	Config.settings.Databits = UART_DATABIT_8;
+	Config.settings.Stopbits = UART_STOPBIT_1;
+	Config.settings.Parity = UART_PARITY_NONE;
+	Config.Auto_CTS = false;
+	Config.Auto_RTS = false;
+
+	if(UART_poort_Init(Com,Config) == ERROR){
+		printf("TG2460H: com error\r\n");
+	}
+
+}
+
+void TG2460H_Set_font(TG2460H_Font_t* Font){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x21;
+	if(Font->Font == FONTA){
+		buffer[2] = 0;
+	}else{
+		buffer[2] = 1;
+	}
+
+	TG2460H_Send(buffer,sizeof(buffer));
+
+	TG2460H_Set_Font_Bold(Font->F_bold);
+	TG2460H_Set_Font_Underline(Font->F_underline);
+	TG2460H_Set_Font_Double_strike(Font->F_double_strike);
+	TG2460H_Set_Font_Size(Font->Width, Font->Height);
+	TG2460H_Set_Font_Size(Font->Width, Font->Height);
+	TG2460H_Set_Font_cpi(Font->cpi);
+	return;
+}
+
+Status TG2460H_Print_string(char * format,...){
+  char buffer[300];
+  uint16_t bytes;
+
+  va_list args;
+  va_start (args, format);
+  bytes = vsnprintf (buffer, 300, format, args);
+  va_end (args);
+#if (DISABLE_PRINTER == 1)
+  //printf("%s\r\n",buffer);
+#endif
+  return TG2460H_Send(buffer, bytes);
+}
+
+TG2460H_Paper_status_t TG2460H_Get_paper_status(void){
+	char buffer[2];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x76;
+
+	TG2460H_Send(buffer,sizeof(buffer));
+#if (DISABLE_PRINTER == 0)
+	if(TG2460H_Receive(buffer) == ERROR){
+		TG2460H_status = S_DEVICE_UNAVAILABLE;
+		return S_DEVICE_UNAVAILABLE;
+	}
+#else
+	return S_PAPER_OK;
+#endif
+
+	if(buffer[0] & (1 << 2)){
+		TG2460H_status = S_PAPER_EMPTY;
+		return S_PAPER_EMPTY;
+	} else if(buffer[0] & (1 << 0)){
+		TG2460H_status = S_PAPER_LOW;
+		return S_PAPER_LOW;
+	}
+	TG2460H_status = S_PAPER_OK;
+	return S_PAPER_OK;
+}
+
+Status TG2460H_Cut_paper(void){
+	TG2460H_Print_string("\r\n\r\n");
+	char buffer[3];
+
+	buffer[0] =	0x1C;
+	buffer[1] = 0xC0;
+	buffer[2] = 0x34;
+
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+Status TG2460H_Print_Barcode(TG2460H_Barcode_t Barcode, char * Data_str){
+	Status Stat;
+
+	Stat = TG2460H_Barcode_HRI_position(Barcode.Position_HRI);
+	Stat |= TG2460H_Barcode_HRI_font(Barcode.Font_A);
+	Stat |= TG2460H_Barcode_height(Barcode.Height);
+	Stat |= TG2460H_Barcode_print(Barcode.Format, Data_str);
+	return Stat;
+}
+
+Status TG2460H_absolute_position(double inch){
+	char buffer[4];
+
+	uint16_t distance = (inch * 200);
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x24;
+	buffer[2] = distance & 0xFF;
+	buffer[3] = (distance >> 8) & 0xFF;
+
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+Status TG2460H_Download_BMP_Logo(uint8_t refnr,  char *filename){
+	char buffer[3];
+	FATFS Fatfs;
+	FRESULT rc;
+	FIL file;
+	UINT br;
+	char Buffer[50];
+	Status Stat;
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x2A;
+	buffer[2] = refnr;
+	Stat = TG2460H_Send(buffer,sizeof(buffer));
+
+	 rc = f_mount(&Fatfs,"SD1:",1);
+	 if(rc != FR_OK){
+	   printf("TG2460H: cant mount sd card %d\r\n",rc);
+	   return ERROR;
+	 }
+
+	 rc = f_open( &file, filename, FA_OPEN_EXISTING | FA_READ);
+	 if(rc != FR_OK)
+	 {
+	   printf("TG2460H: Opening file error %d\r\n",rc);
+	   return ERROR;
+	 }
+	 while(1){
+		 rc = f_read (&file,Buffer,50,&br);
+		 Stat |= TG2460H_Send(&Buffer[0],br);
+		 if(br < 50){
+			 break;
+		 }
+	 }
+	 return Stat;
+}
+
+
+Status TG2460H_Print_Logo(uint8_t refnr){
+	char buffer[4];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x70;
+	buffer[2] = refnr;
+	buffer[3] = 0;
+
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+//////////////////local functions////////////////////////////
+
+Status TG2460H_Init_printer(void){
+	char buffer[2];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x40;
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+Status TG2460H_Set_Font_Bold(bool state){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x45;
+	buffer[2] = (state == true)? 1:0;
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+Status TG2460H_Set_Font_Underline(TG2460H_Thick_t state){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x2D;
+	buffer[2] = state;
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+Status TG2460H_Set_Font_Double_strike(bool state){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0x47;
+	buffer[2] = (state == true)? 1:0;
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+Status TG2460H_Set_Font_Size(TG2460H_Size_t W, TG2460H_Size_t H){
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x21;
+	buffer[2] = H  | (W << 4);
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+Status TG2460H_Set_Font_cpi(uint8_t cpi){
+	char buffer[3];
+
+	buffer[0] =	0x1B;
+	buffer[1] = 0xc1;
+	buffer[2] = cpi;
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+
+
+
+Status TG2460H_Barcode_HRI_position(TG2460H_HRI_t pos){
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x48;
+	buffer[2] = pos;
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+Status TG2460H_Barcode_HRI_font(bool Font_A){
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x66;
+	buffer[2] = (Font_A == true)? 0:1;
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+
+Status TG2460H_Barcode_height(uint8_t height){
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x68;
+	buffer[2] = height;
+	return TG2460H_Send(buffer,sizeof(buffer));
+}
+
+Status TG2460H_Barcode_print(TG2460H_BC_Format_t Format, char * data){
+	Status Stat;
+	char buffer[3];
+
+	buffer[0] =	0x1D;
+	buffer[1] = 0x6B;
+	buffer[2] = Format;
+	Stat = TG2460H_Send(buffer,sizeof(buffer));
+	Stat |= TG2460H_Send(data,strlen(data) + 1);
+	return Stat;
+}
+
+Status TG2460H_Send(char * buffer ,uint16_t lenght){
+	uint32_t Bytes_send = 0 ;
+#if (DISABLE_PRINTER == 0)
+	Bytes_send = UART_send(TG2460H_Uart,(uint8_t *) buffer, lenght);
+#else
+	Bytes_send = lenght;
+#endif
+  if(lenght != Bytes_send){
+	  printf("TG2460H: Printer timeout\r\n");
+	  TG2460H_status = S_DEVICE_UNAVAILABLE;
+	  return ERROR;
+  }
+  TG2460H_new_data_received = false;
+  return SUCCESS;
+}
+
+Status TG2460H_Receive(char * buffer){
+	uint16_t timeout = 0;
+	//Bytes_Received = UART_Receive((LPC_UART_TypeDef *)LPC_UART1,(uint8_t *) buffer,lenght, BLOCKING);
+	static struct process *tmp_current;
+	tmp_current = PROCESS_CURRENT();
+	while(!TG2460H_new_data_received){
+		//process_poll(&Uart_process);
+		process_run();
+		timeout++;
+		if(timeout == 0){
+			process_current = tmp_current;
+			printf("TG2460H: Printer timeout\r\n");
+			return ERROR;
+		}
+	}
+	process_current = tmp_current;
+	buffer[0] = TG2460H_last_received;
+
+	return SUCCESS;
+}
+

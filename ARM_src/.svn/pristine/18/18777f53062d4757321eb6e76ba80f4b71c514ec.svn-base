@@ -1,0 +1,58 @@
+#ifndef _DEVICES_H__
+#define _DEVICES_H__
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <Board/Def_config.h>
+
+#if (DEVICE_PAYTER == 1)
+	#include <Device/Net/payter/RTP.h>
+#endif
+#if (DEVICE_CASH == 1)
+	#include <Device/UART/XBA/XBA.h>
+#endif
+#if (DEVICE_COIN_CHANGER == 1)
+	#include <Device/UART/MDB-C21/MDB-ARB-C21-7TUBES.h>
+#endif
+#if (DEVICE_COIN_ACCEPTOR == 1)
+	#include <Device/I2C/EMP_800/EMP_800.h>
+#endif
+#if (DEVICE_ATM == 1)
+	#include <device/Net/CCV/CCV.h>
+#endif
+#if (DEVICE_RWD_RFID == 1)
+	#include <Device/I2C/RFID/RFID.h>
+#endif
+#if (DEVICE_ELTRA_RFID == 1)
+	#include <Device/UART/ELTRA/ELTRA.h>
+#endif
+#if (DEVICE_QR == 1)
+	#include <Device/I2C/LV3095/LV3095.h>
+#endif
+#if (DEVICE_TG2460_PRINTER == 1)
+	#include <device/UART/TG2460H/TG2460H.h>
+#endif
+
+typedef struct{
+	//devices available
+	bool Payter_available;
+	bool Cash_available;
+	bool Coin_changer_available;
+	bool Coin_acceptor_available;
+	bool ATM_available;
+	bool Multipass_available;
+	bool Multipass_offline;
+	bool Multipass_online;
+	bool EltraRFID_available;
+	bool QR_available;
+	bool Printer_available;
+}Devices_available_t;
+
+extern Devices_available_t g_Devices_available;
+
+
+Devices_available_t Devices_init(void);
+
+void Devices_available(Devices_available_t * Device);
+
+#endif

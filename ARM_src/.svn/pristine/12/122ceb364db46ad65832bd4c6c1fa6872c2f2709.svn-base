@@ -1,0 +1,167 @@
+#include "SCP_Comm.h"
+#include <Core/Memory/list.h>
+#include <Core/Memory/cmem.h>
+
+#define PACKET_BUFFER_SIZE 16
+
+SCP_pack_t SCP_mem[PACKET_BUFFER_SIZE];
+uint8_t SCP_ringptr;
+LIST(SCP_buffer_list);
+uint16_t SCP_Group_ctr = 1;
+int32_t SCP_Send_as_Group_nr = -1;
+
+
+void SCP_packet_timeout(SCP_pack_t * packet);
+
+void SCP_Buffer_init(void){
+	list_init(SCP_buffer_list);
+	SCP_ringptr = 0;
+}
+
+
+uint16_t SCP_start_new_group(void){
+	SCP_Group_ctr++;
+	if(SCP_Group_ctr == 0){
+		SCP_Group_ctr++;
+	}
+	return SCP_Group_ctr;
+}
+
+uint16_t SCP_get_group(void){
+	return SCP_Group_ctr;
+}
+
+void SCP_Send_as_Group(uint16_t group_nr){
+	SCP_Send_as_Group_nr = group_nr;
+}
+
+bool SCP_Buffer_put(SCP_pack_t ** packet_handle, SCP_Data_t packet_data, struct process * process, bool important, uint8_t Device){
+
+	SCP_pack_t * packet;
+	if(packet_handle == NULL){
+		packet_handle = &packet;
+	}
+
+	*packet_handle = &SCP_mem[SCP_ringptr];
+	SCP_packet_timeout(*packet_handle);
+	SCP_ringptr++;
+    if(SCP_ringptr >= PACKET_BUFFER_SIZE){
+	   SCP_ringptr = 0;
+    }
+    (*packet_handle)->next = NULL;
+    (*packet_handle)->Data = packet_data;
+	(*packet_handle)->Process = process;
+	(*packet_handle)->SCP_msgID = SCP_msgID;
+	(*packet_handle)->Dest_device = Device;
+	(*packet_handle)->send = false;
+	(*packet_handle)->incomming = false;
+	if(SCP_Send_as_Group_nr != -1){
+		(*packet_handle)->Group_nr = SCP_Send_as_Group_nr;
+		SCP_Send_as_Group_nr = -1;
+	}else{
+		(*packet_handle)->Group_nr = SCP_Group_ctr;
+	}
+
+	timer_set(&((*packet_handle)->timeout),CLOCK_SECOND * 10);
+	SCP_msgID++;
+	if(SCP_msgID > 0xFF){
+		SCP_msgID = 0;
+	}
+
+	if(important == false){
+		list_add(SCP_buffer_list, *packet_handle);
+	}else{
+		list_push(SCP_buffer_list, *packet_handle);
+	}
+	process_post_synch(&SCP_process,event_SCP,*packet_handle);
+	return true;
+}
+
+bool SCP_Buffer_put_incomming(SCP_pack_t ** packet_handle, SCP_pack_t packet_data){
+
+
+	*packet_handle = &SCP_mem[SCP_ringptr];
+	SCP_packet_timeout(*packet_handle);
+	SCP_ringptr++;
+    if(SCP_ringptr >= PACKET_BUFFER_SIZE){
+	   SCP_ringptr = 0;
+    }
+
+    (*packet_handle)->next = NULL;
+    (*packet_handle)->Data = packet_data.Data;
+    (*packet_handle)->Process = NULL;
+    (*packet_handle)->SCP_msgID = packet_data.SCP_msgID;
+    (*packet_handle)->Dest_device = packet_data.Dest_device;
+    (*packet_handle)->send = false;
+    (*packet_handle)->incomming = true;
+	if(SCP_Send_as_Group_nr != -1){
+		(*packet_handle)->Group_nr = SCP_Send_as_Group_nr;
+		SCP_Send_as_Group_nr = -1;
+	}else{
+		(*packet_handle)->Group_nr = SCP_Group_ctr;
+	}
+
+	timer_set(&((*packet_handle)->timeout),CLOCK_SECOND * 10);
+	list_push(SCP_buffer_list, *packet_handle);
+	process_post_synch(&SCP_process,event_SCP,*packet_handle);
+	return true;
+}
+
+
+void SCP_Buffer_check(void){
+	SCP_pack_t * Buffer_packet = list_head(SCP_buffer_list);
+	while(Buffer_packet){
+		if(SCP_Device_Known(Buffer_packet->Dest_device) == true){
+			SCP_Device_t * Device = SCP_Get_Device(Buffer_packet->Dest_device);
+			if(timer_expired(&Device->retry_timer)){
+				process_post(&SCP_process,event_SCP,Buffer_packet);
+			}
+		}
+		Buffer_packet = list_item_next(Buffer_packet);
+	}
+	return;
+}
+
+SCP_pack_t * SCP_Buffer_get(uint8_t DevID){
+
+	SCP_pack_t * Buffer_packet = list_head(SCP_buffer_list);
+	while(Buffer_packet != NULL){
+		if((Buffer_packet->Dest_device == DevID)&&(Buffer_packet->send == false)){
+			return Buffer_packet;
+		}else{
+			Buffer_packet = list_item_next(Buffer_packet);
+		}
+	}
+	return NULL;
+}
+
+void SCP_Buffer_remove(SCP_pack_t * packet){
+	list_remove(SCP_buffer_list, packet);
+}
+
+bool SCP_packet_in_buffer(SCP_pack_t * packet){
+	return list_item_in_list(SCP_buffer_list, packet);
+}
+
+void SCP_packet_timeout(SCP_pack_t * packet){
+	if(SCP_packet_in_buffer(packet)){
+		if(packet->Process != NULL){
+			packet->Error = E_TIMEOUT;
+			packet->Data.Message_type = msg_Error;
+			printf("SCP[%d]:Inform msg %d timeout to process %s DevId %d\r\n",clock_time(),packet->SCP_msgID,packet->Process->name, packet->Dest_device);
+			process_post_synch(packet->Process, event_SCP, packet);
+		}
+		SCP_Buffer_remove(packet);
+	}
+}
+
+void SCP_timeout_handler(void){
+	SCP_pack_t * packet_ptr;
+	packet_ptr = list_head(SCP_buffer_list);
+	while(packet_ptr){
+		if(timer_expired(&(packet_ptr->timeout))){
+			SCP_packet_timeout(packet_ptr);
+		}
+		packet_ptr = list_item_next(packet_ptr);
+	}
+}

@@ -1,0 +1,33 @@
+#include "dev_reset.h"
+#include <LPC17xx.h>
+#include <Driver/include/lpc17xx_wdt.h>
+#include <stdio.h>
+
+bool Save_reset_enabeld = false;
+
+
+void Hard_reset(void){
+	printf("Reset: Device restart.\r\n");
+	WDT_Init (WDT_CLKSRC_IRC, WDT_MODE_RESET);
+	WDT_Start(10);
+	while(1){
+		//printf(".");
+	}
+	return;
+}
+
+void Save_reset(void){
+	printf("Reset: save reset\r\n");
+	Save_reset_enabeld = true;
+}
+
+bool Save_reset_enabled(void){
+	return Save_reset_enabeld;
+}
+
+void Save_reset_poll(void){
+	if(Save_reset_enabeld == true){
+		Hard_reset();
+		return;
+	}
+}

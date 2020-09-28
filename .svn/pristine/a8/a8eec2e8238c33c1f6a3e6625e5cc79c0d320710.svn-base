@@ -1,0 +1,59 @@
+#include <Core/protocol/Net/SCP/SCP_Comm.h>
+#include <Core/protocol/Net/SCP/SCP_msg.h>
+#include <Core/Extensions/ini/minIni.h>
+#include <Global.h>
+#include <stdint.h>
+#include "Energy_point.h"
+
+SCP_Data_t msg_var_int_send_handler(SCP_Device_t * Device);
+
+void SCP_handlers_init(void){
+	SCP_add_new_handler( msg_var_int_send, msg_var_int_send_handler);
+}
+
+int16_t SCP_array_number(char * Name){
+	char * begin;
+	char * end;
+	begin = memchr ( Name, '[', strlen(Name) );
+	end = memchr ( Name, ']', strlen(Name) );
+	if((begin == NULL)||(end == NULL))
+		return -1;
+	if((end < begin)||((end - begin)>4))
+		return -1;
+	return atoi(begin+1);
+}
+
+SCP_Data_t msg_var_int_send_handler(SCP_Device_t * Device){
+	char * name = SCP_msg_var_int__varname(Device->Cur_Packet);
+	int16_t array_nr;
+	if(strcmp ( name, "Energy_point") == 0){
+		struct Energy_point_t Energy_point;
+		Energy_point.device = Device->Info.SCP_devID;
+		Energy_point.number = SCP_msg_var_int_send__value(Device->Cur_Packet);
+		Energy_point_new(Energy_point);
+		return SCP_msg_Ok();
+	}
+	array_nr = SCP_array_number(name);
+	if(array_nr >= 0){
+		if(Energy_point_exist(array_nr)){
+			Energy_point_data_t * Energy_data;
+			Energy_data = Energy_point_data(array_nr);
+			if(strncmp ( name, "State",5) == 0){
+				Energy_data->State = SCP_msg_var_int_send__value(Device->Cur_Packet);
+				process_post(PROCESS_BROADCAST,event_state_update,NULL);
+				return SCP_msg_Ok();
+			}else if(strncmp ( name, "MaxCurrent",10) == 0){
+				Energy_data->MaxAmpere = SCP_msg_var_int_send__value(Device->Cur_Packet);
+				return SCP_msg_Ok();
+			}else if(strncmp ( name, "Current",7) == 0){
+				Energy_data->Ampere = SCP_msg_var_int_send__value(Device->Cur_Packet);
+				return SCP_msg_Ok();
+			}else if(strncmp ( name, "Watt",4) == 0){
+				Energy_data->Power = SCP_msg_var_int_send__value(Device->Cur_Packet);
+				return SCP_msg_Ok();
+			}
+		}
+	}
+
+	return SCP_msg_Error();
+}

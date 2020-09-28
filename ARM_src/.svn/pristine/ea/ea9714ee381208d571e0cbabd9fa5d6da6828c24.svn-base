@@ -1,0 +1,45 @@
+#include <Board/Def_config.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <Core/Extensions/ini/minIni.h>
+const char * Secure_file = "SD1:/Code.cd";
+
+#if (BOARD_SD_CARD == 1)
+	void Save_code_to_sd(uint16_t auth_lev, uint32_t code){
+		uint8_t encr = 0x36;
+		uint8_t i;
+		uint64_t encr_code;
+		char key[10];
+
+		encr_code = code;
+		for(i = 0; i < 8; i++){
+			encr_code ^= encr;
+			encr_code = (encr_code << 1);
+		}
+		sprintf(key,"Key%d",auth_lev);
+		ini_putl("Code",key,encr_code,"auth code:",Secure_file);
+
+		return;
+	}
+
+	uint32_t Load_code_from_sd(uint16_t auth_lev){
+		uint8_t encr = 0x36;
+		uint8_t i;
+		uint64_t encr_code;
+		char key[10];
+
+		sprintf(key,"Key%d",auth_lev);
+		encr_code = ini_getl("Code",key,0,"auth code:",Secure_file);
+		if(encr_code == 0){
+			return 0;
+		}
+		for(i = 0; i < 8; i++){
+			encr_code = (encr_code >> 1);
+			encr_code ^= encr;
+		}
+
+		return encr_code;
+	}
+
+#endif

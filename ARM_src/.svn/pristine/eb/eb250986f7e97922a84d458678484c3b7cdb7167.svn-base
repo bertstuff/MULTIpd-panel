@@ -1,0 +1,69 @@
+/* Include files */
+#include "Servicebutton.h"
+#include <Board/Def_config.h>
+#if(SERVICE_BUTTON_MODULE == 1)
+	#include <Device/IO/BUTTONS/EBM-Basismodule-buttons.h>
+#endif
+#if(SERVICE_PASS_MODULE == 1)
+	#include <Device/I2C/RFID/RFID.h>
+	#include <Core/protocol/Net/SCP/SCP_Comm.h>
+	#include <Core/protocol/Net/SCP/SCP_msg.h>
+	#include <Screen/SCR_Message.h>
+#endif
+#if((SERVICE_BUTTON_MODULE == 1)||(SERVICE_PASS_MODULE == 1))
+	#include <Screen/Menu/SCR_Menu_func.h>
+	#include <Screen/Menu/SCR_menu.h>
+#endif
+
+/* Global Functions */
+#if((SERVICE_BUTTON_MODULE == 1)||(SERVICE_PASS_MODULE == 1))
+	struct pt pin_pt;
+#endif
+
+PT_THREAD(Servicebutton_handler(bool * exit,process_event_t ev, process_data_t data)){
+	*exit = false;
+	PT_BEGIN(&pin_pt);
+#if(SERVICE_BUTTON_MODULE == 1)
+		EBM_Button_led(EBM_BUTTON1,true);
+#endif
+#if(SERVICE_PASS_MODULE == 1)
+		if(ev == event_card_change){
+
+			SCP_pack_t * RFID_packet;
+			g_RFID_card = RFID_get_card(RFID_get_reader(0x00));
+			if(g_RFID_card->card_present == true){
+				if((g_RFID_card->card_info.auth_lev > 0) && (g_RFID_card->card_unlock_code.ok == true)){
+					Please_wait_screen(true);
+					Set_GLobal_UID(g_RFID_card->card_UID);
+					PT_SCP_MSG_PRESENT(&pin_pt,&RFID_packet, g_Cur_UID,0);
+					Please_wait_screen(false);
+					if(RFID_packet->Data.Message_type == msg_Akkoord){
+						if(SCP_msg_Akkoord__User(RFID_packet) != 0){
+							menu_set_authorization_level(SCP_msg_Akkoord__User(RFID_packet));
+						}
+					}
+#if(SERVICE_BUTTON_MODULE == 1)
+					EBM_Button_led(EBM_BUTTON1,false);
+#endif
+					Start_menu();
+					*exit = true;
+				}
+			}
+		}
+#endif
+
+#if(SERVICE_BUTTON_MODULE == 1)
+		if(ev == event_EBM_button_Pressed){
+			uint8_t button_val;
+
+			button_val = *((uint8_t *)data);
+			if(button_val == EBM_BUTTON1){
+					EBM_Button_led(EBM_BUTTON1,false);
+				Start_menu();
+				*exit = true;
+			}
+		}
+#endif
+
+	PT_END(&pin_pt);
+}

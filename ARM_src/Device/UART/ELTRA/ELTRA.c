@@ -1,0 +1,739 @@
+/*includes*/
+#include <Core/Peripherals/UART_Dev_Init.h>
+#include <Core/Process/process.h>
+#include <Device/Devices.h>
+#include <core/Extensions/ini/minIni.h>
+#include <Core/Timer/etimer.h>
+#include <Driver/include/lpc_types.h>
+#include <Driver/include/lpc17xx_uart.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "ELTRA.h"
+
+/*defines*/
+#define LOW_BYTE(DATA) ((DATA & 0x0F)+0x30)
+#define HIGH_BYTE(DATA) (((DATA & 0xF0)>>4)+0x30)
+
+#define WUP 0x12
+#define STX 0x02
+#define DEST 0x42
+#define ETX 0x03
+#define EOT 0x04
+#define ACK 0x06
+#define NAK 0x15
+#define ENQ 0x05
+#define DLE 0x10
+
+#define X code[1]
+#define Y code[2]
+
+typedef struct{
+	bool enabled;
+	bool eject;
+	bool capture;
+	bool issue;
+	bool good;
+}ELTRA_action_t;
+
+typedef enum{
+	IDLE,
+	DISABLED,
+	IN_MOUTH,
+	INSERTING,
+	READING,
+	INSERTED,
+	EJECTING,
+	EJECTED,
+	CAPTURING,
+	ISSUE_CARD,
+}ELTRA_state_t;
+
+
+/*globals*/
+UART_select_t ELTRA_com;
+process_event_t event_ELTRA;
+ELTRA_event_t event_data;
+ELTRA_error_t Eltra_error;
+char * ELTRA_send_data;
+bool ELTRA_blink = true;
+
+ELTRA_card_t ELTRA_current_card;
+ELTRA_state_t ELTRA_state = DISABLED;
+ELTRA_device_t ELTRA_device;
+ELTRA_action_t ELTRA_action;
+ELTRA_cartrige_t cartrige_state;
+
+/* typedef */
+void ELTRA_uart_init(UART_select_t Com);
+void ELTRA_Receive_byte(char byte);
+
+PROCESS(ELTRA_process, "Eltra process");
+
+/*global functions*/
+void ELTRA_init(UART_select_t Com){
+	ELTRA_com = Com;
+	ELTRA_uart_init(Com);
+	event_ELTRA = process_alloc_event(); //Claim a event number
+	event_data.data = NULL;
+	event_data.data_len = 0;
+
+	ELTRA_device.ELTRA_line = ini_getl("ELTRA","Line",0,"Barcode = 0, RFID = 1:",inifile_device);
+	ELTRA_device.dispenser = ini_getbool("ELTRA","Dispenser",0,"Dispenser available:",inifile_device);
+
+	ELTRA_action.enabled = false;
+	ELTRA_action.good = false;
+	ELTRA_action.eject = false;
+	ELTRA_action.issue = false;
+
+	ELTRA_current_card.action.Info_read = true;
+	ELTRA_current_card.action.Info_write = true;
+	ELTRA_current_card.action.Unlock_code_read = false;
+	ELTRA_current_card.action.Unlock_code_write = false;
+
+	process_start(&ELTRA_process,NULL);
+}
+
+bool ELTRA_dispenser_available(void){
+	return	ELTRA_device.dispenser;
+}
+
+ELTRA_cartrige_t ELTRA_cartrige_state(void){
+    printf("ELTRA: Cartrige state %d \r\n", cartrige_state);
+	return cartrige_state;
+}
+
+void ELTRA_uart_init(UART_select_t Com){
+	UART_config_type Config;
+	g_Devices_available.EltraRFID_available = ini_getbool("Device","EltraRFID_available",false,"EltraRFID available:",inifile_device);
+	if(g_Devices_available.EltraRFID_available == false){
+		return;
+	}
+	Config.New_data = NULL;
+	Config.settings.Baud_rate = 9600;
+	Config.settings.Databits = UART_DATABIT_8;
+	Config.settings.Stopbits = UART_STOPBIT_1;
+	Config.settings.Parity = UART_PARITY_NONE;
+	Config.Auto_CTS = false;
+	Config.Auto_RTS = false;
+
+	if(UART_poort_Init(Com,Config) == ERROR){
+		printf("TG2460H: com error\r\n");
+	}
+}
+
+void ELTRA_enable(bool state){
+	ELTRA_action.enabled = state;
+	printf("ELTRA: %s\r\n",(state?"enable":"disable"));
+	return;
+}
+
+void ELTRA_eject(bool good){
+	ELTRA_action.eject = true;
+	ELTRA_action.good = good;
+	printf("ELTRA:start eject (%s)\r\n",(good?"green":"red"));
+}
+
+void ELTRA_capture(bool good){
+	ELTRA_action.capture = true;
+	ELTRA_action.good = good;
+	printf("ELTRA:start capture (%s)\r\n",(good?"green":"red"));
+}
+
+void ELTRA_issue_card(void){
+	ELTRA_action.issue = true;
+	ELTRA_action.eject = false;
+	ELTRA_action.capture = false;
+	ELTRA_action.enabled = false;
+	printf("ELTRA:start issue card\r\n");
+}
+
+ELTRA_card_t ELTRA_get_current_card(void){
+	return ELTRA_current_card;
+}
+
+ELTRA_card_t * ELTRA_get_current_reader(void){
+	return &ELTRA_current_card;
+}
+
+ELTRA_error_t ELTRA_last_error(void){
+	return event_data.error;
+}
+
+bool ELTRA_card_removed(void){
+	return ELTRA_state != EJECTED;
+}
+
+uint8_t ELTRA_CRC(uint8_t * data, uint8_t len){
+	uint8_t i;
+	uint8_t CRC;
+	CRC = data[0];
+	for( i = 1; i < len; i++){
+		CRC ^= data[i];
+	}
+	return CRC;
+}
+
+void ELTRA_malloc_data(uint8_t * in, uint8_t len){
+	if(event_data.data != NULL){
+		free(event_data.data);
+		event_data.data = NULL;
+		event_data.data_len = 0;
+	}
+	event_data.data = malloc(len);
+	memmove(event_data.data,in,len);
+	event_data.data_len = len;
+	return;
+}
+
+Status ELTRA_Data_Send(ELTRA_cmd_t command, char * data, uint8_t len){
+	uint8_t *buf;
+	uint8_t bp = 0;
+	uint16_t CRC;
+	uint8_t buffer[1];
+	uint8_t buf_len;
+
+	buf = malloc(8 + (len*2));
+
+	buf[bp++] = WUP;
+	buf[bp++] = STX;
+	buf[bp++] = DEST;
+	buf[bp++] = command;
+	memmove(&buf[bp],ELTRA_send_data,len);
+	bp+=len;
+	buf[bp++] = ETX;
+	CRC = ELTRA_CRC(buf, 5 + (len*2));
+	buf[bp++] = HIGH_BYTE(CRC);
+	buf[bp++] = LOW_BYTE(CRC);
+	buf[bp++] = EOT;
+
+	event_data.error = NO_ERROR;
+	timer_set(&event_data.ELTRA_timeout,CLOCK_SECOND *10);
+
+	if(UART_send(ELTRA_com, buf, 8 + (len*2)) == 0){
+		free(buf);
+		return ERROR;
+	}
+	free(buf);
+
+	buf_len = UART_receive(ELTRA_com, buffer, sizeof(buffer));
+	if(buf_len == 1){
+		if(buffer[0] == ACK){
+			return SUCCESS;
+		}
+		if(buffer[0] == NAK){
+			printf("ELTRA: NAK\r\n");
+			return ERROR;
+		}
+	}
+
+	return ERROR;
+}
+
+Status ELTRA_Inquiry_for_message_Send(void){
+	uint8_t buf[2];
+
+	buf[0] = WUP;
+	buf[1] = ENQ;
+
+	if(UART_send(ELTRA_com, buf, 2) == 0){
+		return ERROR;
+	}
+	return SUCCESS;
+}
+
+Status ELTRA_NAK_Send(void){
+	uint8_t buf[2];
+
+	buf[0] = WUP;
+	buf[1] = NAK;
+
+	if(UART_send(ELTRA_com, buf, 2) == 0){
+		return ERROR;
+	}
+	return SUCCESS;
+}
+
+bool ELTRA_Check_event(process_event_t ev,void * data, ELTRA_cmd_t command){
+	if(ev != event_ELTRA){
+		return false;
+	}
+	ELTRA_event_t * event_data = (ELTRA_event_t *)data;
+	if(event_data->error == ELTRA_TIMEOUT){
+		return true;
+	}
+
+	if(command == event_data->command){
+		return true;
+	}
+	return false;
+}
+
+Status ELTRA_Check_Command_error(uint8_t * code){
+	//Unknown command
+	if(code[0] == 0x52){
+		event_data.error = COMMAND_REFUSED;
+		printf("ELTRA: command refused\r\n");
+		return ERROR;
+	}
+	if(code[0] == 0x54){
+		event_data.error = COMMAND_UNAVAILABLE;
+		printf("ELTRA: command unavailable\r\n");
+		return ERROR;
+	}
+	if(code[0] == 0x30){
+		event_data.error = NO_ERROR;
+		return SUCCESS;
+	}
+	return ERROR;
+}
+
+void ELTRA_Check_error(Status * status, uint8_t code, uint8_t pos, ELTRA_error_t error){
+	if(code & (1<<pos)){
+		event_data.error = error;
+		*status = ERROR;
+	}
+}
+
+void ELTRA_Check_error_byte(Status * status, uint8_t code, uint8_t byte, ELTRA_error_t error){
+	if(code == byte){
+		event_data.error = error;
+		*status = ERROR;
+	}
+}
+
+Status ELTRA_command_execution(uint8_t command, uint8_t * code){
+	Status status = SUCCESS;
+	event_data.error = NO_ERROR;
+	event_data.command = command;
+	ELTRA_Check_Command_error(code);
+	switch(command){
+	case CAPTURE_TICKET:
+		ELTRA_Check_error(&status, X,1, TRANSPORT_ERROR);
+		ELTRA_Check_error(&status, X,2, NO_TICKET_INSIDE);
+		break;
+	case INSERT_TICKET:
+		ELTRA_Check_error(&status, X,1, JAMMING);
+		ELTRA_Check_error(&status, X,3, NO_TICKET_ON_MOUTH);
+		break;
+	case EJECT_TICKET:
+		ELTRA_Check_error(&status, X,1, TRANSPORT_ERROR);
+		ELTRA_Check_error(&status, X,2, NO_TICKET_INSIDE);
+		ELTRA_Check_error(&status, Y,3, TICKET_ON_MOUTH);
+		break;
+	case EJECT_CARD:
+		ELTRA_Check_error_byte(&status, X,0x32, JAMMING);
+		ELTRA_Check_error_byte(&status, X,0x34, NO_TICKET_INSIDE);
+		break;
+	case ISSUE_CARD_FROM_STK:
+		ELTRA_Check_error_byte(&status, X,0x31, NO_CARTRIDGE);
+		ELTRA_Check_error_byte(&status, X,0x32, JAMMING);
+		ELTRA_Check_error_byte(&status, X,0x36, SLEIGH_WRONG_POS);
+		ELTRA_Check_error_byte(&status, X,0x37, NO_MORE_CARDS);
+		break;
+	default:
+		break;
+	}
+
+	process_post(&ELTRA_process,event_ELTRA,&event_data);
+	return status;
+}
+
+
+void ELTRA_poll(void){
+	uint8_t byte;
+	uint8_t byte1;
+	uint8_t buffer[64];
+	uint8_t buf_len;
+	uint8_t * buf_ptr;
+	uint8_t command;
+	uint8_t code[3];
+	uint8_t * data_start;
+	uint8_t data_len = 0;
+	uint16_t CRC;
+	uint8_t i;
+
+
+	if(timer_expired(&event_data.ELTRA_timeout) && (ELTRA_state != DISABLED)){
+		printf("ELTRA: timeout\r\n");
+		event_data.error = ELTRA_TIMEOUT;
+		process_post(&ELTRA_process,event_ELTRA,&event_data);
+	}
+
+	ELTRA_Inquiry_for_message_Send();
+	while(1){
+		buf_len = UART_receive(ELTRA_com, buffer, sizeof(buffer));
+
+		if(buf_len == 0){return;}
+		buf_ptr = buffer;
+		i = 0;
+		while(1){
+			byte = *buf_ptr;
+			buf_ptr++;
+			i++;
+			if(byte == STX){break;} //start char
+			if(byte == DLE){return;} // no message
+			if(i >= buf_len){
+				return;
+			}
+		}
+		buf_len -= i;
+		if(buf_len < 9){
+			return;
+		}
+
+		byte = *(buf_ptr++);
+		if(byte != DEST){return;}
+		command = *(buf_ptr++);
+		code[0] = *(buf_ptr++);
+		code[1] = *(buf_ptr++);
+		code[2] = *(buf_ptr++);
+		data_start = buf_ptr;
+		while(1){
+			byte = *(buf_ptr++);
+			if(byte == ETX){;break;}
+			data_len++;
+			if(data_len > 50){
+				return;
+			}
+		}
+		CRC = ELTRA_CRC(buffer, data_len + 7);
+		uint8_t high = HIGH_BYTE(CRC);
+		uint8_t low = LOW_BYTE(CRC);
+		byte = *(buf_ptr++);
+		byte1 = *(buf_ptr++);
+		if((byte != high)||(byte1 != low)){
+			printf("ELTRA: crc error\r\n");
+			ELTRA_NAK_Send();
+			continue;
+		}
+		byte = *(buf_ptr++);
+		if(byte != EOT){
+			ELTRA_NAK_Send();
+			continue;
+		}
+		break;
+	}
+	ELTRA_malloc_data(data_start, data_len);
+
+	ELTRA_command_execution(command, code);
+	timer_set(&event_data.ELTRA_timeout,CLOCK_SECOND * 30);
+	return;
+}
+
+
+
+PROCESS_THREAD(ELTRA_process, ev, data)
+{
+  static struct etimer poll_tm;
+  static struct etimer send_tm;
+  static struct timer status_tm;
+  static uint8_t repeat = 0;
+  static bool new_card = false;
+
+  if(etimer_expired(&poll_tm)){
+	  ELTRA_poll();
+	  etimer_set(&poll_tm,CLOCK_SECOND/4);
+  }
+
+  PROCESS_BEGIN();
+  etimer_set(&send_tm,CLOCK_SECOND*2);
+  PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&send_tm));
+  etimer_set(&send_tm,CLOCK_SECOND*2);
+  PROCESS_ELTRA_LED_MOUTH(0,0);
+  if(ELTRA_device.dispenser == true){
+	  PROCESS_ELTRA_EJECT_CARD();
+  }else{
+	  PROCESS_ELTRA_EJECT_TICKET();
+  }
+
+  while(1){
+	  PROCESS_WAIT_EVENT();
+	  if((ev == PROCESS_EVENT_TIMER)&&(etimer_expired(&send_tm) == false)){
+		  continue;
+	  }
+
+	  if(timer_expired(&status_tm)){
+		  if(ELTRA_device.dispenser == true){
+			  PROCESS_ELTRA_GET_PHYSICAL_STATUS();
+			  cartrige_state = CARTRIGE_NORMAL;
+			  if(ELTRA_GET_PHYSICAL_STATUS__SENSOR(DISPENSER_CARDS_FULL_SENSOR) == false){
+				  cartrige_state = CARTRIGE_FULL;
+			  }
+			  if(ELTRA_GET_PHYSICAL_STATUS__SENSOR(DISPENSER_CARDS_LOW_SENSOR) == false){
+				  cartrige_state = CARTRIGE_LOW;
+			  }
+			  if(ELTRA_GET_PHYSICAL_STATUS__SENSOR(DISPENSER_CARDS_PRESENT_SENSOR) == true){
+				  cartrige_state = CARTRIGE_EMPTY;
+			  }
+		  }
+		  timer_set(&status_tm,CLOCK_SECOND * 5);
+	  }
+
+	  if(ELTRA_state == DISABLED){
+		  if(ELTRA_action.enabled == true){
+			  PROCESS_ELTRA_LED_MOUTH(255,255);
+			  ELTRA_state = IDLE;
+		  }
+
+		  if(ELTRA_action.issue == true){
+			  PROCESS_ELTRA_GET_PHYSICAL_STATUS();
+			  if(ELTRA_GET_PHYSICAL_STATUS__SENSOR(MOUTH_SENSOR)){
+				  printf("ELTRA:card in mouth eject\r\n");
+				  ELTRA_state = EJECTING;
+				  etimer_set(&send_tm, CLOCK_SECOND * 2);
+			  }else{
+				  ELTRA_action.issue = false;
+				  ELTRA_state = ISSUE_CARD;
+				  etimer_set(&send_tm, CLOCK_SECOND*2);
+			  }
+		  }else{
+			  etimer_set(&send_tm, CLOCK_SECOND/2);
+		  }
+	  }
+
+	  if(ELTRA_state == ISSUE_CARD){
+		  PROCESS_ELTRA_ISSUE_CARD_FROM_STK();
+		  if((event_data.error == NO_ERROR)||(event_data.error == SLEIGH_WRONG_POS)){
+			  printf("ELTRA:card issued\r\n");
+			  repeat = 0;
+			  ELTRA_state = READING;
+			  new_card = true;
+		  }else{
+			  if(event_data.error == JAMMING){
+				  cartrige_state = CARTRIGE_JAM;
+			  }
+			  if(event_data.error == NO_MORE_CARDS){
+				  cartrige_state = CARTRIGE_EMPTY;
+			  }
+			  printf("ELTRA:no card issued\r\n");
+			  ELTRA_state = IDLE;
+			  ELTRA_current_card.card_present = false;
+			  ELTRA_action.capture = false;
+			  ELTRA_action.eject = false;
+			  process_post(PROCESS_BROADCAST, event_ELTRA, &ELTRA_current_card);
+		  }
+	  }
+
+	  if(ELTRA_state == IDLE){
+		  if(ELTRA_action.enabled == false){
+			  PROCESS_ELTRA_LED_MOUTH(0,0);
+			  ELTRA_state = DISABLED;
+			  etimer_set(&send_tm, CLOCK_SECOND);
+			  continue;
+		  }
+		  ELTRA_action.capture = false;
+		  ELTRA_action.eject = false;
+		  ELTRA_action.issue = false;
+
+		  ELTRA_blink = !ELTRA_blink;
+		  if(ELTRA_blink){
+			  PROCESS_ELTRA_LED_MOUTH(255,255);
+		  }else{
+			  PROCESS_ELTRA_LED_MOUTH(0,0);
+		  }
+
+		  PROCESS_ELTRA_GET_PHYSICAL_STATUS();
+		  if(ELTRA_GET_PHYSICAL_STATUS__SENSOR(MOUTH_SENSOR)){
+			  printf("ELTRA:card in mouth\r\n");
+			  PROCESS_ELTRA_LED_MOUTH(255,255);
+			  ELTRA_state = INSERTING;
+			  etimer_set(&send_tm, CLOCK_SECOND * 2);
+		  }else{
+			  etimer_set(&send_tm, CLOCK_SECOND / 2);
+		  }
+	  }
+
+	  if(ELTRA_state == INSERTING){
+		  PROCESS_ELTRA_INSERT_TICKET(100);
+		  if(event_data.error == NO_ERROR){
+			  PROCESS_ELTRA_GET_PHYSICAL_STATUS();
+			  if(ELTRA_GET_PHYSICAL_STATUS__SENSOR(POS1_SENSOR)){
+				  printf("ELTRA:card inserted\r\n");
+				  PROCESS_ELTRA_LED_MOUTH(255,150);
+				  repeat = 0;
+				  new_card = false;
+				  ELTRA_state = READING;
+			  }else{
+				  printf("ELTRA:no card inserted\r\n");
+				  ELTRA_state = IDLE;
+			  }
+		  }else{
+			  printf("ELTRA:no card inserted\r\n");
+			  ELTRA_state = IDLE;
+		  }
+		  etimer_set(&send_tm, CLOCK_SECOND);
+	  }
+
+	  if(ELTRA_state == READING){
+		  if(ELTRA_device.ELTRA_line == BARCODE_LINE){
+			  PROCESS_ELTRA_ISO1443A_REQUEST_MODE();
+			  PROCESS_ELTRA_ISO1443A_CASCADE_LEVEL1(&ELTRA_current_card.Card_status, &ELTRA_current_card.card_UID);
+		  }
+		  if(ELTRA_device.ELTRA_line == RFID_LINE){
+			  PROCESS_ELTRA_CONTINUOUS_READ(&ELTRA_current_card.Card_status, &ELTRA_current_card.card_UID);
+			  if(ELTRA_current_card.Card_status == CARD_OK){
+				  PROCESS_ELTRA_ABORT_CONTINUOUS_READ();
+			  }
+			  repeat++;
+		  }
+
+		  if(ELTRA_current_card.Card_status == CARD_OK){
+			  ELTRA_current_card.card_present = true;
+			  //Debug info
+			  printf("ELTRA: Pass present [UID: %02x ",ELTRA_current_card.card_UID.UID[0]);
+			  printf("%02x ",ELTRA_current_card.card_UID.UID[1]);
+			  printf("%02x ",ELTRA_current_card.card_UID.UID[2]);
+			  printf("%02x ",ELTRA_current_card.card_UID.UID[3]);
+			  printf("%02x ",ELTRA_current_card.card_UID.UID[4]);
+			  printf("%02x ",ELTRA_current_card.card_UID.UID[5]);
+			  printf("%02x] \r\n",ELTRA_current_card.card_UID.UID[6]);
+
+			  //read card blocks
+			  ELTRA_card_error_t  Card_status;
+			  ELTRA_current_card.read_ok = true;
+			  if((ELTRA_current_card.action.Info_read) && (ELTRA_current_card.read_ok == true)){
+				 PROCESS_ELTRA_SELECT(&Card_status);
+
+				 PROCESS_ELTRA_LOGIN(&Card_status);
+
+				 PROCESS_ELTRA_READ_INFO_BLOCK(ELTRA_current_card.read_ok, &Card_status);
+			  }
+
+			  process_post(PROCESS_BROADCAST, event_ELTRA, &ELTRA_current_card);
+			  timer_set(&status_tm,1);
+			  PROCESS_ELTRA_LED_MOUTH(10,10);
+			  ELTRA_state = INSERTED;
+		  }else{
+			  if(repeat > 5){
+				  PROCESS_ELTRA_LED_MOUTH(0,255);
+				  if(new_card == true){
+					  ELTRA_state = CAPTURING;
+				  }else{
+					  ELTRA_state = EJECTING;
+				  }
+			  }
+		  }
+		  etimer_set(&send_tm, CLOCK_SECOND/4);
+	  }
+
+	  if(ELTRA_state == INSERTED){
+		  if(event_data.error == ELTRA_TIMEOUT){
+			  ELTRA_action.eject = true;
+			  printf("ELTRA:timeout\r\n");
+		  }
+
+		  //write card blocks
+		  ELTRA_card_error_t  Card_status;
+		  ELTRA_current_card.write_ok = true;
+		  if((ELTRA_current_card.action.Info_write) && (ELTRA_current_card.write_ok == true)){
+			  PROCESS_ELTRA_WRITE_INFO_BLOCK(ELTRA_current_card.write_ok, &Card_status);
+		  }
+
+		  if(ELTRA_action.capture == true){
+			  if(ELTRA_action.good){
+				  PROCESS_ELTRA_LED_MOUTH(255,0);
+			  }else{
+				  PROCESS_ELTRA_LED_MOUTH(0,255);
+			  }
+			  ELTRA_state = CAPTURING;
+			  etimer_set(&send_tm, CLOCK_SECOND);
+			  continue;
+		  }
+
+		  if(ELTRA_action.eject == true){
+			  if(ELTRA_action.good){
+				  PROCESS_ELTRA_LED_MOUTH(255,0);
+			  }else{
+				  PROCESS_ELTRA_LED_MOUTH(0,255);
+			  }
+			  ELTRA_state = EJECTING;
+			  etimer_set(&send_tm, CLOCK_SECOND);
+			  continue;
+		  }
+
+		  etimer_set(&send_tm, CLOCK_SECOND);
+	  }
+
+	  if(ELTRA_state == EJECTING){
+		  ELTRA_current_card.action.Info_write = false;
+		  ELTRA_current_card.action.Unlock_code_write = false;
+		  if(ELTRA_device.dispenser == true){
+			  PROCESS_ELTRA_EJECT_CARD();
+		  }else{
+			  PROCESS_ELTRA_EJECT_TICKET();
+		  }
+		  PROCESS_ELTRA_GET_PHYSICAL_STATUS();
+		  if(ELTRA_GET_PHYSICAL_STATUS__SENSOR(MOUTH_SENSOR)){
+			  ELTRA_action.eject = false;
+			  printf("ELTRA:card ejected\r\n");
+			  ELTRA_state = EJECTED;
+			  ELTRA_current_card.card_present = false;
+		  }else{
+			  if(ELTRA_GET_PHYSICAL_STATUS__SENSOR(POS1_SENSOR)==false){
+				  ELTRA_state = EJECTED;
+				  ELTRA_current_card.card_present = false;
+			  }
+		  }
+		  etimer_set(&send_tm, CLOCK_SECOND);
+	  }
+
+	  if(ELTRA_state == EJECTED){
+		  ELTRA_blink = !ELTRA_blink;
+		  if(ELTRA_blink){
+			  if(ELTRA_action.good){
+				  PROCESS_ELTRA_LED_MOUTH(255,0);
+			  }else{
+				  PROCESS_ELTRA_LED_MOUTH(0,255);
+			  }
+		  }else{
+			  PROCESS_ELTRA_LED_MOUTH(0,0);
+		  }
+		  PROCESS_ELTRA_GET_PHYSICAL_STATUS();
+		  if(ELTRA_GET_PHYSICAL_STATUS__SENSOR(MOUTH_SENSOR) == false){
+			  if(ELTRA_action.issue == false){
+				  process_post(PROCESS_BROADCAST, event_ELTRA, &ELTRA_current_card);
+			  }
+			  printf("ELTRA:card removed\r\n");
+			  if(ELTRA_action.enabled == true){
+				  PROCESS_ELTRA_LED_MOUTH(255,255);
+				  ELTRA_state = IDLE;
+			  }else{
+				  PROCESS_ELTRA_LED_MOUTH(0,0);
+				  ELTRA_state = DISABLED;
+
+			  }
+		  }else{
+			  if(ELTRA_action.issue == true){
+				  printf("ELTRA:card in mouth eject\r\n");
+				  ELTRA_state = EJECTING;
+				  etimer_set(&send_tm, CLOCK_SECOND * 2);
+			  }
+		  }
+		  etimer_set(&send_tm, CLOCK_SECOND/4);
+	  }
+
+	  if(ELTRA_state == CAPTURING){
+		  ELTRA_current_card.action.Info_write = false;
+		  ELTRA_current_card.action.Unlock_code_write = false;
+		  PROCESS_ELTRA_CAPTURE_TICKET();
+		  if(event_data.error == NO_ERROR){
+			  ELTRA_action.capture = false;
+			  printf("ELTRA:card captured\r\n");
+			  ELTRA_current_card.card_present = false;
+			  process_post(PROCESS_BROADCAST, event_ELTRA, &ELTRA_current_card);
+			  if(ELTRA_action.enabled == true){
+				  PROCESS_ELTRA_LED_MOUTH(255,255);
+				  ELTRA_state = IDLE;
+			  }else{
+				  PROCESS_ELTRA_LED_MOUTH(0,0);
+				  ELTRA_state = DISABLED;
+			  }
+		  }
+		  etimer_set(&send_tm, CLOCK_SECOND);
+	  }
+
+  }
+  PROCESS_END();
+}

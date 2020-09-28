@@ -1,0 +1,17 @@
+volatile char *Build_Revision      = "2";
+volatile char *Build_Date          = "2018/02/16 11:45:00";
+
+#ifndef DEBUGGING
+	#if 1
+		#warning Source is modified
+		volatile char *Version_state = "C";
+	#else
+		volatile char *Version_state = "R";
+	#endif
+#else
+	volatile char *Version_state = "D";
+	#warning Debugging enabled
+	#if 1
+		#warning Source is modified
+	#endif
+#endif

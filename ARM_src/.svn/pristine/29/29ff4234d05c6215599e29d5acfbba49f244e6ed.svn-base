@@ -1,0 +1,165 @@
+#include "EDIP_240B_IO.h"
+#include "EDIP_240B_Send.h"
+#include "EDIP_240B_Init.h"
+#include <Driver/include/lpc17xx_i2c.h>
+#include <Core/Peripherals/I2C_Dev_Init.h>
+#include <Core/Debug/Debug_Terminal.h>
+#include <stdbool.h>
+#include <Driver/include/lpc_types.h>
+#include <Board/Def_config.h>
+
+#ifdef EDIP_IO_EXPANDER
+  #include <I2C/9554/I2C_9554.h>
+#endif
+
+uint8_t Edip_io_stat;
+uint32_t Buzzer_counter;
+uint16_t Buzzer_onTime;
+uint16_t Buzzer_offTime;
+
+uint32_t Led_counter;
+uint16_t Led_onTime;
+uint16_t Led_offTime;
+
+void Edip_io_init(void){
+#ifdef EDIP_IO_EXPANDER
+ Status I2C_Status;
+ 
+ I2C_Status = I2C_9554_SetDir ((Edip_address & 0x07), 0x00);
+ if(I2C_Status == ERROR){
+	 log_error("EDIP: EDIP io expander failed\r\n");
+ } 
+#endif
+ return;
+}
+
+Status Edip_Set_Buzzer(uint8_t mode){
+  char buffer[4 + HDR];
+  char *Data; //Begin of data buffer
+  Data = &buffer[DST];
+  
+  Data[0] = ESCLCD;
+  Data[1] = 'Y';
+  Data[2] = 'S';
+  Data[3] = mode;
+   
+  return Edip_Send(buffer, 4, false);
+}
+
+void Edip_Set_Alarm_Buzzer_interval(uint16_t onTime, uint16_t offTime){
+  Buzzer_onTime = onTime;
+  Buzzer_offTime = offTime;
+  if(onTime == 0){
+   Edip_Set_Alarm_Buzzer(false);
+  }
+}
+
+void Edip_Set_Alarm_Led_interval(uint16_t onTime, uint16_t offTime){
+  Led_onTime = onTime;
+  Led_offTime = offTime;
+  if(onTime == 0){
+   Edip_Set_Alarm_Led(false);
+  }
+}
+
+void Edip_Set_Alarm_Buzzer(bool State){
+  Status I2C_Status = SUCCESS;
+  
+#ifdef EDIP_IO_EXPANDER  
+  if(State == true){
+    I2C_Status = I2C_9554_SetPort ((Edip_address & 0x07),(1<<0));
+  }else{
+    I2C_Status = I2C_9554_ClearPort ((Edip_address & 0x07),(1<<0));
+  }
+#endif
+#ifdef EDIP_IO_PIC
+  I2C_M_SETUP_Type Dev_buffer;
+  uint8_t txbuffer[1];
+  
+  if(State == true){
+    txbuffer[0] = Edip_io_stat | 0x20;
+  }else{
+    txbuffer[0] = Edip_io_stat & ~0x20;
+  }
+  Edip_io_stat = txbuffer[0];
+  Dev_buffer.sl_addr7bit = ((0x80 | (Edip_address & 0x07)) >> 1);
+  Dev_buffer.tx_data = txbuffer;
+  Dev_buffer.tx_length = 1;
+  Dev_buffer.retransmissions_max = 5;
+  Dev_buffer.rx_data = NULL;
+  Dev_buffer.rx_length = 0;
+  I2C_Status = I2C_MasterTransferData(LPC_I2C1, &Dev_buffer, I2C_TRANSFER_POLLING);
+#endif  
+  if(I2C_Status == ERROR){
+	  log_error("EDIP: alarm buzzer failed\r\n");
+  }
+  return ;
+}
+
+
+void Edip_Set_Alarm_Led(bool State){  
+  Status I2C_Status = SUCCESS;
+  
+#ifdef EDIP_IO_EXPANDER
+  if(State == true){
+    I2C_Status = I2C_9554_SetPort ((Edip_address & 0x07),(1<<1));
+  }else{
+    I2C_Status = I2C_9554_ClearPort ((Edip_address & 0x07),(1<<1));
+  }
+#endif
+#ifdef EDIP_IO_PIC
+  I2C_M_SETUP_Type Dev_buffer;  
+  uint8_t txbuffer[1];
+  
+  if(State == true){
+    txbuffer[0] = Edip_io_stat | 0x10;
+  }else{
+    txbuffer[0] = Edip_io_stat & ~0x10;
+  }
+  Edip_io_stat = txbuffer[0];
+  Dev_buffer.sl_addr7bit = (0x80 | (Edip_address & 0x07)) >> 1;
+  Dev_buffer.tx_data = txbuffer;
+  Dev_buffer.tx_length = 1;
+  Dev_buffer.retransmissions_max = 5;
+  Dev_buffer.rx_data = NULL;
+  Dev_buffer.rx_length = 0;  
+  I2C_Status = I2C_MasterTransferData(LPC_I2C1, &Dev_buffer, I2C_TRANSFER_POLLING);
+#endif
+  
+  if(I2C_Status == ERROR){
+	  log_error("EDIP: alarm led failed\r\n");
+  }
+  return ;
+}
+
+/////////////private functions///////////////////////////////////
+void EDIP_IO_interval_handler(void){  
+  //Buzzer interval
+  if(Buzzer_onTime != 0){
+    if(Buzzer_counter == 1){
+      Edip_Set_Alarm_Buzzer(true);
+    }
+    if(Buzzer_counter == Buzzer_onTime){
+      Edip_Set_Alarm_Buzzer(false);
+    }
+    if(Buzzer_counter >= (Buzzer_onTime + Buzzer_offTime)){
+      Buzzer_counter = 0;
+    }
+    Buzzer_counter++;
+  }
+
+  //Led interval
+  if(Led_onTime != 0){
+    if(Led_counter == 1){
+      Edip_Set_Alarm_Led(true);
+    }
+    if(Led_counter == Led_onTime){
+      Edip_Set_Alarm_Led(false);
+    }
+    if(Led_counter >= (Led_onTime + Led_offTime)){
+      Led_counter = 0;
+    }
+    Led_counter++;
+  }
+  
+}

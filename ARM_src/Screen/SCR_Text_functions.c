@@ -1,0 +1,56 @@
+#include <Board/Def_config.h>
+#include <Core/Type/type.h>
+
+Language_t g_Language;
+Language_t g_Language_def;
+
+#if(BOARD_SCREEN == 1)
+#include <Screen/SCR_Text.h>
+#include <Core/Extensions/ini/minIni.h>
+Screen_t g_screen_type = SCR_EDIP;
+
+bool lanuage_exsist(Screen_t Screen_type, Language_t language){
+	TCHAR Filename[25] = "SD1:/TEXT_";
+	const TCHAR * Section[4]={"NL","EN","DE","FR"};
+
+	FIL fp;
+	switch(Screen_type){
+	case SCR_LCD_2X12:
+		strcat(Filename,"2x12_");
+		break;
+	case SCR_LCD_2X16:
+		strcat(Filename,"2x16_");
+		break;
+	case SCR_PC:
+		strcat(Filename,"PC_");
+		break;
+	default:
+		strcat(Filename,"EDIP_");
+		break;
+	}
+	strcat(Filename,Section[language]);
+	strcat(Filename,".ini");
+	if(f_open(&fp, Filename, FA_OPEN_EXISTING) == FR_OK){
+		f_close(&fp);
+		return true;
+	}
+	return false;
+}
+
+
+
+Language_t lanuage_next(Screen_t Screen_type, Language_t current){
+	current++;
+	if(current == NOT_SET){
+		current = 0;
+	}
+	while(lanuage_exsist(Screen_type, current) == false){
+		current++;
+		if(current == NOT_SET){
+			current = 0;
+		}
+	}
+	return current;
+}
+
+#endif

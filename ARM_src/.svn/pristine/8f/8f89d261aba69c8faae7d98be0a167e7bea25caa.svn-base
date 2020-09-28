@@ -1,0 +1,16 @@
+#ifndef __ACCESS_CODE_H__
+#define __ACCESS_CODE_H__
+
+#include <stdint.h>
+
+/*
+ * @brief save secret code to sd file
+ */
+void Save_code_to_sd(uint16_t auth_lev, uint32_t code);
+
+/*
+ * @brief load secret code from sd card
+ */
+uint32_t Load_code_from_sd(uint16_t auth_lev);
+
+#endif //__ACCESS_CODE_H__

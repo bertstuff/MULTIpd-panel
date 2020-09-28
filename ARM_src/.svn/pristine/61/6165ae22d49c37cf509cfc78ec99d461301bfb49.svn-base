@@ -1,0 +1,256 @@
+#include "Error_check.h"
+#include <Core/Memory/list.h>
+#include <stdlib.h>
+#include <Core/Timer/etimer.h>
+#include <Core/Process/process.h>
+#include <Core/protocol/Net/SCP/SCP_Comm.h>
+
+LIST(hardware_check_list);
+error_list_item_t * current_pos;
+PROCESS(Error_check_process, "error check process");
+
+void error_check_init(void){
+	process_start(&Error_check_process,NULL);
+}
+
+void error_check_add(error_type_t type,void * error_var ,error_number_t error_number){
+	error_list_item_t * error_type;
+	error_type = (error_list_item_t *)list_head(hardware_check_list);
+	//check if already in list
+	while(error_type != NULL){
+		if(error_type->error_number == error_number){
+			printf("Error check: check add failed, Already in list!!\r\n");
+			return;
+		}
+		error_type = (error_list_item_t *)list_item_next(error_type);
+	}
+
+	error_type = malloc(sizeof(error_list_item_t));
+	error_type->type = type;
+	error_type->error_var = error_var;
+	error_type->error_number = error_number;
+	error_type->prio_mask = 0xFFFFFFFF;
+	error_type->scp_send = false;
+	error_type->enum_mask = 0xFFFFFFFF;
+	list_add(hardware_check_list,error_type);
+}
+
+void error_check_start(void){
+	current_pos = (error_list_item_t *)list_head(hardware_check_list);
+}
+
+bool error_check_enum_mask(error_list_item_t * error){
+	return error->enum_mask & (1<<((*(uint32_t *)error->error_var)-1));
+}
+
+bool error_check_get_error_prio(error_list_item_t * error){
+	switch(error->type){
+	case TYPE_STATUS:
+		return (error->prio_mask)?HIGH_PRIO:LOW_PRIO;
+	case TYPE_ENUM:
+		return (error->prio_mask & (1<<((*(uint32_t *)error->error_var)-1)))?HIGH_PRIO:LOW_PRIO;
+	}
+	return false;
+}
+
+bool error_check_enum_error_present(error_list_item_t * error){
+	return ((*(uint8_t *)error->error_var != 0) && (error_check_enum_mask(error)));
+}
+
+error_list_item_t * error_check_lookup_next_error(error_list_item_t * cur_pos, uint32_t * ret_nr){
+	uint32_t error_nr = 0;
+	while(1){
+		if(cur_pos == NULL){
+			*ret_nr = 0;
+			return NULL;
+		}
+		switch(cur_pos->type){
+		case TYPE_STATUS:
+			if(*(Status *)cur_pos->error_var == ERROR){
+				error_nr  = cur_pos->error_number;
+				error_nr |= error_check_get_error_prio(cur_pos);
+				*ret_nr = error_nr;
+				goto return_error;
+			}else{
+				cur_pos->scp_send = false;
+			}
+			break;
+		case TYPE_ENUM:
+			if(error_check_enum_error_present(cur_pos)){
+				error_nr = cur_pos->error_number | ERROR_ENUM_STATE(*(uint8_t *)cur_pos->error_var);
+				error_nr |= error_check_get_error_prio(cur_pos);
+				*ret_nr = error_nr;
+				goto return_error;
+			}else{
+				cur_pos->scp_send = false;
+			}
+			break;
+		}
+		cur_pos = (error_list_item_t *)list_item_next(cur_pos);
+	}
+	return_error:
+	return (error_list_item_t *)list_item_next(cur_pos);
+}
+
+
+error_list_item_t * error_check_lookup_next_error_change(error_list_item_t * cur_pos, uint32_t * ret_nr){
+	if(cur_pos == NULL){
+		cur_pos = (error_list_item_t *)list_head(hardware_check_list);
+	}else{
+		cur_pos = (error_list_item_t *)list_item_next(cur_pos);
+	}
+
+	uint32_t error_nr = 0;
+	while(1){
+		if(cur_pos == NULL){
+			*ret_nr = 0;
+			return NULL;
+		}
+		switch(cur_pos->type){
+		case TYPE_STATUS:
+			if(*(Status *)cur_pos->error_var == ERROR){
+				if(cur_pos->scp_send == false){
+					error_nr  = cur_pos->error_number;
+					error_nr |= error_check_get_error_prio(cur_pos);
+					*ret_nr = error_nr;
+					return cur_pos;
+				}
+			}else{
+				if(cur_pos->scp_send == true){
+					error_nr  = cur_pos->error_number;
+					error_nr |= error_check_get_error_prio(cur_pos);
+					*ret_nr = error_nr;
+					return cur_pos;
+				}
+			}
+			break;
+		case TYPE_ENUM:
+			if(error_check_enum_error_present(cur_pos)){
+				if(cur_pos->scp_send == false){
+					error_nr = cur_pos->error_number | ERROR_ENUM_STATE(*(uint8_t *)cur_pos->error_var);
+					error_nr |= error_check_get_error_prio(cur_pos);
+					*ret_nr = error_nr;
+					return cur_pos;
+				}
+			}else{
+				if(cur_pos->scp_send == true){
+					error_nr = cur_pos->error_number | ERROR_ENUM_STATE(*(uint8_t *)cur_pos->error_var);
+					error_nr |= error_check_get_error_prio(cur_pos);
+					*ret_nr = error_nr;
+					return cur_pos;
+				}
+			}
+			break;
+		}
+		cur_pos = (error_list_item_t *)list_item_next(cur_pos);
+	}
+	return NULL;
+}
+
+uint32_t error_check_next_error(void){
+	uint32_t error_nr;
+	current_pos = error_check_lookup_next_error(current_pos,&error_nr);
+	return error_nr;
+}
+
+bool error_check_no_errors(void){
+	uint32_t error_nr;
+	error_list_item_t * cur_pos;
+	cur_pos = (error_list_item_t *)list_head(hardware_check_list);
+	cur_pos = error_check_lookup_next_error(cur_pos,&error_nr);
+	if(error_nr == 0 ){return true;}
+	if(!(error_nr & HIGH_PRIO)){return true;}
+	if(cur_pos == NULL){return false;}
+	return false;
+}
+
+bool error_check_change_priority(error_number_t error_number,uint32_t prio_mask){
+	error_list_item_t * cur_pos;
+	cur_pos = (error_list_item_t *)list_head(hardware_check_list);
+	while(1){
+		if(cur_pos == NULL){
+			return false;
+		}
+		if(cur_pos->error_number == error_number){
+			cur_pos->prio_mask = prio_mask;
+			return true;
+		}
+		cur_pos = (error_list_item_t *)list_item_next(cur_pos);
+	}
+	return false;
+}
+
+bool error_check_lower_priority(error_number_t error_number, uint8_t enumval){
+	error_list_item_t * cur_pos;
+	cur_pos = (error_list_item_t *)list_head(hardware_check_list);
+	while(1){
+		if(cur_pos == NULL){
+			return false;
+		}
+		if(cur_pos->error_number == error_number){
+			switch(cur_pos->type){
+			case TYPE_STATUS:
+				cur_pos->enum_mask = LOW_PRIO;
+				break;
+			case TYPE_ENUM:
+				cur_pos->enum_mask &= ~(1<<(enumval-1));
+				break;
+			}
+			return true;
+		}
+		cur_pos = (error_list_item_t *)list_item_next(cur_pos);
+	}
+	return false;
+}
+
+bool error_check_ignore_enum_val(error_number_t error_number,uint8_t enumval){
+	error_list_item_t * cur_pos;
+	cur_pos = (error_list_item_t *)list_head(hardware_check_list);
+	if(enumval == 0){
+		return false;
+	}
+	while(1){
+		if(cur_pos == NULL){
+			return false;
+		}
+		if(cur_pos->error_number == error_number){
+			cur_pos->enum_mask &= ~(1<<(enumval-1));
+			return true;
+		}
+		cur_pos = (error_list_item_t *)list_item_next(cur_pos);
+	}
+	return false;
+}
+
+
+PROCESS_THREAD(Error_check_process, ev, data)
+{
+	static struct etimer check_timer;
+	static error_list_item_t * check_pos = NULL;
+
+	PROCESS_BEGIN();
+	PROCESS_YIELD_UNTIL(g_SCP_error == E_NONE);
+	printf("Error check: start\r\n");
+	etimer_set(&check_timer,CLOCK_SECOND*20);
+	check_pos = (error_list_item_t *)list_head(hardware_check_list);
+	while (ev != PROCESS_EVENT_EXIT){ //main loop  till exit
+		if(etimer_expired(&check_timer)){
+			uint32_t error_nr;
+			check_pos = error_check_lookup_next_error_change(check_pos, &error_nr);
+			if(error_nr != 0){
+				if(check_pos->scp_send == false){
+					check_pos->scp_send = true;
+					printf("Error check: send error present %d\r\n", error_nr);
+					BUFFER_SCP_MSG_ALERT__ERROR_PRESENT(error_nr);
+				}else{
+					check_pos->scp_send = false;
+					printf("Error check: send error gone %d\r\n", error_nr);
+					BUFFER_SCP_MSG_ALERT__ERROR_GONE(error_nr);
+				}
+			}
+			etimer_set(&check_timer,CLOCK_SECOND*5);
+		}
+		PROCESS_WAIT_EVENT();
+	}
+	PROCESS_END();
+}

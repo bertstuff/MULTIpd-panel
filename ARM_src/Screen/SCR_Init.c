@@ -1,0 +1,132 @@
+#include <Board/Def_config.h>
+#include <stdio.h>
+#include <core/Process/process.h>
+#if(BOARD_SCREEN == 1)
+#include "SCR_Init.h"
+#include <version.h>
+#include <Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h>
+#include <Device/I2C/LCD_Alphanumeric/LCD_symbol.h>
+#include <Device/Devices.h>
+#include <Driver/include/lpc17xx_wdt.h>
+#include <core/Util/build_defs.h>
+
+
+/*prototype*/
+void SCR_Font_init(void);
+
+/*Global variables*/
+EDIP_font_t H1Font;
+EDIP_font_t StdFont;
+EDIP_font_t SmallFont;
+EDIP_font_t TinyFont;
+
+uint8_t cur_screen_addr = 1;
+bool SCR_busy = false;
+#endif
+struct process *screen_current = NULL;
+void SCR_Symbol_init();
+
+void SCR_load(struct process *p){
+	if(screen_current == p){return;}
+	if(screen_current != NULL){
+		process_exit(screen_current);
+		printf("SCREEN:exit %s\r\n",screen_current->name);
+	}
+	printf("SCREEN: %s\r\n",p->name);
+	screen_current = p;
+	process_start(p, NULL);
+}
+
+#if(BOARD_SCREEN == 1)
+void SCR_select(Screen_t Screen_type, uint8_t addr){
+	g_screen_type = Screen_type;
+	cur_screen_addr = addr;
+
+	switch(Screen_type){
+	case SCR_EDIP:
+		Edip_Select_LCD(addr);
+		break;
+	case SCR_LCD_2X12:
+	case SCR_LCD_2X16:
+		LCD_Alphanumeric_select(addr);
+		break;
+	default:
+		break;
+	}
+	return;
+}
+
+void SCR_set_busy(bool state){
+	SCR_busy = state;
+}
+
+bool SCR_is_busy(void){
+	return SCR_busy;
+}
+
+void SCR_init(void){
+	Point_t point;
+	g_Devices_available.Screen_available = ini_getbool("Device","Screen_available",true,"Screen available:",inifile_device);
+	if(g_Devices_available.Screen_available == false){
+		return;
+	}
+
+	switch(g_screen_type){
+	case SCR_EDIP:
+		point.x = 120;
+		point.y = 50;
+		process_start(&EDIP_process, NULL);//Start screen response process
+		SCR_Font_init();
+		Edip_Clear_Display();
+		Edip_Set_Font(&StdFont);
+		Edip_Draw_String(point,"%s",PRODUCT_NAME);
+		point.y += 15;
+		Edip_Draw_String(point,"V%d.%d.%s%s",MAJOR_VERSION,MINOR_VERSION,Build_Revision,Version_state);
+		break;
+	case SCR_LCD_2X16:
+	case SCR_LCD_2X12:
+		point.x = 0;
+		point.y = 0;
+		LCD_Alphanumeric_Init(cur_screen_addr);
+		SCR_Symbol_init();
+		LCD_Alphanumeric_Clear_Display();
+		LCD_Alphanumeric_Draw_String(point,"%s",PRODUCT_NAME);
+		LCD_Alphanumeric_Display_Control(true, false, false);
+		point.y = 1;
+		LCD_Alphanumeric_Draw_String(point,"V%d.%d.%s%s",MAJOR_VERSION,MINOR_VERSION,Build_Revision,Version_state);
+		break;
+	case SCR_PC:
+		printf("SCR_PC:[version] V%d.%d.%s%s",MAJOR_VERSION,MINOR_VERSION,Build_Revision,Version_state);
+		break;
+	case SCR_NONE:
+		break;
+	}
+
+}
+
+void SCR_Font_init(void){
+  Edip_New_Font(&H1Font);
+  Edip_Change_Font_Setting(&H1Font,FONT,6);
+  Edip_Change_Font_Setting(&H1Font,ALIGN,A_CENTER);
+
+  Edip_New_Font(&StdFont);
+  Edip_Change_Font_Setting(&StdFont,FONT,5);
+  Edip_Change_Font_Setting(&StdFont,ALIGN,A_CENTER);
+
+  Edip_New_Font(&SmallFont);
+  Edip_Change_Font_Setting(&SmallFont,FONT,2);
+  Edip_Change_Font_Setting(&SmallFont,ALIGN,A_CENTER);
+
+  Edip_New_Font(&TinyFont);
+  Edip_Change_Font_Setting(&TinyFont,FONT,1);
+  Edip_Change_Font_Setting(&TinyFont,ALIGN,A_CENTER);
+  return;
+}
+
+void SCR_Symbol_init(void){
+  LCD_Alphanumeric_Load_Symbol(1,C_Euro);
+  return;
+}
+#endif
+
+

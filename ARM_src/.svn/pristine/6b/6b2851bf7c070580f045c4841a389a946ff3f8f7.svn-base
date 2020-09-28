@@ -1,0 +1,81 @@
+/**
+ * \addtogroup device
+ * @{
+ */
+
+/**
+ * \defgroup led
+ *
+ * API to control led on processor board
+ *
+ * @{
+ */
+
+/**
+ * \file
+ *        This file contains functions to control the led on the processor board
+ * \author
+ *         Mark van der Heijden <m.vanderheijden@custommate.eu>
+ * 
+ */
+#ifndef DEBUG_LED
+#define DEBUG_LED
+
+  /* Include files */
+  #include <driver/include/lpc17xx_gpio.h>
+  #include <stdbool.h>
+  #include <Board/Def_config.h>
+  
+  /* Global Types */
+  #define DIR_OUTPUT 1
+
+#ifndef BOARD_LED1_PORT
+  #define BOARD_LED1_PORT 1
+#endif
+#ifndef BOARD_LED2_PORT
+  #define BOARD_LED2_PORT 1
+#endif
+#ifndef BOARD_LED1_PIN
+  #define BOARD_LED1_PIN (1<<31)
+#endif
+#ifndef BOARD_LED2_PIN
+  #define BOARD_LED2_PIN (1<<30)
+#endif
+
+  #define LED_EBM_PIN (1<<20)
+  #define _DEBUG_LED				 1
+  /* Global Variables */
+
+  /* Global prototypes */
+  /**
+  *@brief Set debug led as output
+  *@return void
+  **/
+  void Debug_led_init(void);
+  
+  /**
+  *@brief change state of led 1
+  *@param State on or off
+  *@return void
+  **/
+  void Debug_led1(bool state);
+  
+  /**
+  *@brief change state of led 2
+  *@param State on or off
+  *@return void
+  **/
+  void Debug_led2(bool state);
+
+  /**
+  *@brief change state of DBG led on multipass EBM
+  *@param State on or off
+  *@return void
+  **/
+  void Debug_led_Multipass_EBM(bool state);
+#endif
+ /**
+ * 	@}
+ * @}
+ **/
+

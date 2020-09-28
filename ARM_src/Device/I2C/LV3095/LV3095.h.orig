@@ -1,0 +1,63 @@
+/**
+ * \addtogroup device
+ * @{
+ */
+
+/**
+ * \defgroup LV3095_API
+ *
+ * The LV3095 API has functions to communicate with the QR code reader
+ *
+ * @{
+ */
+
+/**
+ * \file
+ * This file contains functions for the LV3095
+ * \author
+ *         Mark van der Heijden <m.vanderheijden@custommate.eu>
+ *
+ */
+#ifndef TG2460H_H_
+#define TG2460H_H_
+	#include <stdint.h>
+	#include <stdbool.h>
+	#include <Process/process.h>
+	#include <Type/type.h>
+	#include <Device/I2C/RFID/RFID.h>
+
+	#define QR_MAX_SPEED_HZ 400000
+
+	typedef struct {
+		uint8_t UID[7];
+		Language_t Language;
+	} QR_User_t;
+
+
+	//Event when new QR is presented. data points to the current QR code with type QR_User_t
+	extern process_event_t event_QR_present;
+
+	//QR code reader error state
+	extern bool QR_error;
+	/*
+	 * @brief start RFID and QR code reader
+	 * @param addr_jpr address jumper closed?
+	 */
+	void QR_RFID_init(bool addr_jpr);
+
+	/*
+	 * @brief get last last user information
+	 * @returns last user information
+	 */
+	QR_User_t QR_get_current_user(void);
+
+	/*
+	 * @brief enable QR reader
+	 * @param enable true = on false = off
+	 */
+	void QR_enable(bool enable);
+#endif
+ /**
+ * 	@}
+ * @}
+ **/
