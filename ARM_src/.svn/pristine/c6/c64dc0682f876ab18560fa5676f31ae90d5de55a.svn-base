@@ -1,0 +1,696 @@
+#include <Core/Clock/clock.h>
+#include <Core/Debug/Debug_Terminal.h>
+#include <Core/Debug/Error_check.h>
+#include <Core/Extensions/ini/minIni.h>
+#include <Core/protocol/Net/dns/resolv.h>
+#include <Core/protocol/Net/psock.h>
+#include <Core/protocol/Net/SCP/SCP_Comm.h>
+#include <Core/protocol/Net/SCP/SCP_msg.h>
+#include <Core/protocol/Net/tcpip.h>
+#include <Core/protocol/Secure/aes/aes.h>
+#include <Core/protocol/Secure/sha1/sha1.h>
+#include <Core/Peripherals/Net_Dev_Init.h>
+#include <Core/Memory/memb.h>
+#include <Core/Thread/pt.h>
+#include <Core/Timer/etimer.h>
+#include <Core/Util/array.h>
+#include <Processes/dev_reset.h>
+#include <stdlib.h>
+#include <string.h>
+#include <Core/Memory/list.h>
+#include <cr_section_macros.h>
+
+#define ENCRYPT_AES_REF 1
+#define PACKET_BUFFER_SIZE 16
+
+void * SCP_Resolv_handel;
+void * SCP_Backup_Resolv_handel;
+bool backup_server_available;
+bool use_backup_server = false;
+bool continuous_connection = true;
+uip_ipaddr_t g_Server_ipaddr;
+uip_ipaddr_t g_Backup_Server_ipaddr;
+uint16_t g_Server_port;
+uint16_t g_Backup_Server_port;
+uint16_t DevInfo_interval;
+SCP_DevInfo_t DevInfo;
+process_event_t event_SCP;
+SCP_error_t g_SCP_error = E_CON_ERROR;
+struct psock ps_TX;
+uint8_t SCP_buffer[58];
+bool SCP_dev_reset;
+uint16_t SCP_msgID = 0;
+uint16_t SCP_Group_ctr = 1;
+int32_t SCP_Send_as_Group_nr = -1;
+struct etimer DevInfo_tm;
+struct etimer DevInfo_check_tm;
+struct etimer SCP_timeout_tm;
+uint8_t connect_attempt = 0;
+LIST(SCP_buffer_list);
+SCP_pack_t * Cur_SCP_packet = NULL;
+MEMB(SCP_mem, SCP_pack_t, PACKET_BUFFER_SIZE);
+SCP_pack_t Incomming_SCP_packet;
+
+const char STD_KEY[8] = {0xc2,0x99,0x8c,0x68,0x41,0xff,0x92,0x3a};
+
+PROCESS(SCP_process, "SCP connection");
+PROCESS(SCP_devInfo_process, "SCP devinfo process");
+bool SCP_execute_incoming_msg(SCP_pack_t * packet_data, bool need_answer);
+
+/*weak prototypes (define by user)*/
+bool SCP_Openpoort(SCP_pack_t * packet_data) __attribute__((weak));
+bool SCP_Retour(SCP_pack_t * packet_data) __attribute__((weak));
+bool SCP_Newprice(SCP_pack_t * packet_data) __attribute__((weak));
+bool SCP_Mode(SCP_pack_t * packet_data) __attribute__((weak));
+bool SCP_Noodcode(SCP_pack_t * packet_data) __attribute__((weak));
+bool SCP_AMS_start(SCP_pack_t * packet_data) __attribute__((weak));
+bool SCP_Print(SCP_pack_t * packet_data) __attribute__((weak));
+bool SCP_ReserveringBetaal(SCP_pack_t * packet_data) __attribute__((weak));
+
+void SCP_Init(GroupId_t groupnr, bool device_reset){
+	uip_ipaddr_t ipadddr;
+
+	SCP_dev_reset = device_reset;
+	DevInfo.SCP_groupnr = groupnr;
+	DevInfo.SCP_modnr = ini_getl("Device","Module_nr",0,"Module number:",inifile_net);
+	DevInfo.SCP_locnr = ini_getl("Device","Location_nr",0,"Location number:",inifile_net);
+	ini_resolv_ipaddr(&SCP_Resolv_handel,"Server Communication", "Server_URL", "multipass.custommate.eu", "URL or IP of Multipass server:", inifile_net);//start ip resolver
+	g_Server_port = ini_getl("Server Communication", "Server_MultiP_Port",15233,"Port of server:", inifile_net);
+	backup_server_available = ini_getbool("Server Communication","backup_server_available",true,"Backup server available:", inifile_net);
+	if(backup_server_available == true){
+		ini_resolv_ipaddr(&SCP_Backup_Resolv_handel,"Server Communication", "Backup_Server_URL", "backup.custommate.eu", "URL or IP of backup Multipass server:", inifile_net);//start ip resolver for backup server
+		g_Backup_Server_port = ini_getl("Server Communication", "Backup_Server_Port",g_Server_port,"Port of backup server:", inifile_net);
+	}
+	DevInfo_interval = ini_getl("Server Communication", "DevInfo_interval",180,"Interval for sending Devinfo messages to server", inifile_net);
+	uip_gethostaddr(&ipadddr);
+	DevInfo.SCP_devID = (ipadddr.u8[2]<<8) + (ipadddr.u8[3]);
+	event_SCP = process_alloc_event(); //Claim a event number
+	error_check_add(TYPE_ENUM,&g_SCP_error,ERROR_SCP);
+	list_init(SCP_buffer_list);
+	process_start(&SCP_process, NULL);
+	//process_start(&SCP_devInfo_process, NULL);
+	memb_init(&SCP_mem);
+	return;
+}
+
+SCP_DevInfo_t SCP_Get_device_info(void){
+	DevInfo.SCP_modnr = ini_getl("Device","Module_nr",0,"Module number:",inifile_net);
+	DevInfo.SCP_locnr = ini_getl("Device","Location_nr",0,"Location number:",inifile_net);
+	return DevInfo;
+}
+
+bool SCP_Get_setting_bit(uint8_t bit_nr){
+	return (DevInfo.Answer_Setting & (1<<bit_nr));
+}
+
+uint16_t SCP_start_new_group(void){
+	SCP_Group_ctr++;
+	if(SCP_Group_ctr == 0){
+		SCP_Group_ctr++;
+	}
+	return SCP_Group_ctr;
+}
+
+uint16_t SCP_get_group(void){
+	return SCP_Group_ctr;
+}
+
+void SCP_Send_as_Group(uint16_t group_nr){
+	SCP_Send_as_Group_nr = group_nr;
+}
+
+bool SCP_put_buffer(SCP_pack_t packet_handle, bool important){
+	SCP_pack_t * packet_ptr;
+
+	if(list_length(SCP_buffer_list) > PACKET_BUFFER_SIZE){
+		printf("SCP: soft panic, scp buffer full\r\n");
+		return false;
+	}
+	packet_ptr = memb_alloc(&SCP_mem);
+	if(packet_ptr == NULL){
+		printf("SCP: malloc failed\r\n");
+		return false;
+	}
+	packet_handle.SCP_msgID = SCP_msgID;
+	if(SCP_Send_as_Group_nr != -1){
+		packet_handle.Group_nr = SCP_Send_as_Group_nr;
+		SCP_Send_as_Group_nr = -1;
+	}else{
+		packet_handle.Group_nr = SCP_Group_ctr;
+	}
+	timer_set(&(packet_handle.timeout),CLOCK_SECOND * 10);
+	SCP_msgID++;
+	if(SCP_msgID > 0xFF){
+		SCP_msgID = 0;
+	}
+
+	*packet_ptr = packet_handle;
+
+	if(important == false){
+		list_add(SCP_buffer_list, packet_ptr);
+	}else{
+		list_push(SCP_buffer_list, packet_ptr);
+	}
+	process_post_synch(&SCP_process,event_SCP,NULL);
+	return true;
+}
+
+SCP_pack_t * SCP_get_buffer(void){
+	if(Cur_SCP_packet != NULL){
+		return Cur_SCP_packet;
+	}else{
+		Cur_SCP_packet = list_pop(SCP_buffer_list);
+	}
+	return Cur_SCP_packet;
+}
+
+void SCP_free_buffer(){
+	if(Cur_SCP_packet == NULL){return;}
+	memb_free(&SCP_mem, Cur_SCP_packet);
+	Cur_SCP_packet = NULL;
+	return;
+}
+
+bool SCP_data_in_buffer(void){
+	return (list_length(SCP_buffer_list) > 0)?true:false;
+}
+
+void SCP_timeout_handler(void){
+	SCP_pack_t * packet_ptr;
+	packet_ptr = list_head(SCP_buffer_list);
+
+	if((Cur_SCP_packet != NULL)&&(Cur_SCP_packet->Process != NULL)){
+		if(timer_expired(&(Cur_SCP_packet->timeout))){
+			Cur_SCP_packet->error = E_TIMEOUT;
+			Cur_SCP_packet->Answer_Message_type = msg_Error;
+			printf("SCP[%d]:Inform current msg %d timeout to process %s\r\n",clock_time(),Cur_SCP_packet->SCP_msgID,Cur_SCP_packet->Process->name);
+			process_post_synch(Cur_SCP_packet->Process, event_SCP, Cur_SCP_packet);
+			memb_free(&SCP_mem, Cur_SCP_packet);
+			Cur_SCP_packet = NULL;
+			PSOCK_INIT(&ps_TX, (uint8_t *)SCP_buffer, sizeof(SCP_buffer));
+		}
+	}
+
+	while(1){
+		if(packet_ptr == NULL){break;}
+		if(packet_ptr->Process != NULL){
+			if(timer_expired(&(packet_ptr->timeout))){
+				packet_ptr->error = E_TIMEOUT;
+				packet_ptr->Answer_Message_type = msg_Error;
+				printf("SCP[%d]:Inform msg %d timeout to process %s\r\n",clock_time(),packet_ptr->SCP_msgID,packet_ptr->Process->name);
+				process_post_synch(packet_ptr->Process, event_SCP, packet_ptr);
+				list_remove(SCP_buffer_list, packet_ptr);
+				memb_free(&SCP_mem, packet_ptr);
+				packet_ptr = list_head(SCP_buffer_list);
+			}else{
+				packet_ptr = list_item_next(packet_ptr);
+			}
+		}else{
+			packet_ptr = list_item_next(packet_ptr);
+		}
+	}
+}
+
+uint32_t SCP_Encrypt(char * buffer_in,char * buffer_out){
+	static AES_KEY SCP_AES_KEY;
+	SHA1Context SCP_SHA1;
+	char key[16];
+	uint8_t Key_hash[SHA1_HASH_SIZE];
+	uint8_t i, lenght,blocks;
+
+	lenght = strlen(buffer_in);
+	blocks = (lenght/16);
+	blocks += ((lenght%16)==0)?0:1;
+
+	for(i = lenght; i < (blocks*16);i++){
+		buffer_in[i] = ' ';
+	}
+
+	buffer_out[0] = blocks;
+	buffer_out[1] = ENCRYPT_AES_REF;
+
+	//put salt and pepper together
+	memmove(key,STD_KEY,8);
+	for(i=0; i<8; i++){
+		key[8+i] = rand() % 255;
+		buffer_out[2+i] = key[8+i];
+	}
+
+	//create sha1 hash
+	SHA1Init (&SCP_SHA1);
+	SHA1Update (&SCP_SHA1, key, 16);
+	SHA1Final (&SCP_SHA1,Key_hash);
+
+	//encrypt data with AES
+	AES_set_encrypt_key((unsigned char *)Key_hash,128,&SCP_AES_KEY);
+	for(i = 0; i < blocks; i++){
+		AES_ecb_encrypt((unsigned char *)&buffer_in[i*16] ,(unsigned char *)&buffer_out[10+(i*16)] ,&SCP_AES_KEY, AES_ENCRYPT);
+	}
+
+	printf("SCP:lenght %d \r\n",10+(blocks*16));
+	return 10+(blocks*16);
+}
+
+void SCP_Decrypt(char * buffer_in,uint8_t lenght,char * buffer_out){
+	static AES_KEY SCP_AES_KEY;
+	SHA1Context SCP_SHA1;
+	char key[16];
+	uint8_t Key_hash[SHA1_HASH_SIZE];
+	uint8_t i, blocks;
+
+	blocks = ((lenght-8)/16);
+
+	//put salt and pepper together
+	memmove(key,STD_KEY,8);
+	for(i=0; i<8; i++){
+		key[8+i] = buffer_in[i];
+	}
+
+	//create sha1 hash
+	SHA1Init (&SCP_SHA1);
+	SHA1Update (&SCP_SHA1, key, 16);
+	SHA1Final (&SCP_SHA1,Key_hash);
+
+	//encrypt data with AES
+	AES_set_decrypt_key((unsigned char *)Key_hash,128,&SCP_AES_KEY);
+	for(i = 0; i < blocks; i++){
+		AES_ecb_encrypt((unsigned char *)&buffer_in[(i*16)+8] ,(unsigned char *)&buffer_out[i*16] ,&SCP_AES_KEY, AES_DECRYPT);
+	}
+	return;
+}
+
+short unsigned int SCP_packet_to_data(void * packet){
+	SCP_pack_t * packet_data = (SCP_pack_t *)packet;
+	char packet_buffer[100];
+	snprintf(packet_buffer,100,"%d %d %d %x %x %x %x %x %x %x %d %d %d",
+	packet_data->SCP_msgID,
+	DevInfo.SCP_devID,
+	packet_data->Message_type,
+	packet_data->UID[0],
+	packet_data->UID[1],
+	packet_data->UID[2],
+	packet_data->UID[3],
+	packet_data->UID[4],
+	packet_data->UID[5],
+	packet_data->UID[6],
+	packet_data->Value[0],
+	packet_data->Value[1],
+	packet_data->Group_nr);
+	return SCP_Encrypt(packet_buffer,(char *)uip_appdata);
+}
+
+bool SCP_data_to_packet(char * buffer,uint8_t lenght, SCP_pack_t * packet_data){
+	char packet_buffer[100];
+	char *packet_pt;
+	char **arr;
+	int size, i;
+	char *p;
+
+	memset(packet_buffer,'\0',sizeof(packet_buffer));
+	SCP_Decrypt((char *)&buffer[2],(lenght-2),packet_buffer);
+
+	packet_pt = packet_buffer;
+	while(isspace(*packet_pt)){packet_pt++;} //skip leading spaces
+	size = explode(&arr, packet_pt,' '); //string to array
+
+	if(size < 11){printf("SCP:wrong lenght\r\n"); return false;} //check lenght
+
+	Cur_SCP_packet->Answer_SCP_msgID = atoi(arr[0]);
+	if(Cur_SCP_packet->Answer_SCP_msgID < 0xFF){
+		//response packet
+		if(Cur_SCP_packet->Answer_SCP_msgID != Cur_SCP_packet->SCP_msgID){//check msgid
+			printf("SCP:wrong id S:%d R:%d\r\n",Cur_SCP_packet->SCP_msgID,Cur_SCP_packet->Answer_SCP_msgID);
+			return false;
+		}
+	}
+
+	if(atoi(arr[1]) != DevInfo.SCP_devID){printf("SCP:wrong devid\r\n"); return false;} //check device id
+
+
+	//Fill answer packet
+	packet_data->Answer_Message_type = (tRFIDmsg)atoi(arr[2]);
+	for(i = 0 ;i < 7; i++){
+		packet_data->Answer_UID[i] = strtoul(arr[3+i], &p, 16);
+	}
+
+	packet_data->Answer_Value[0] = atoi(arr[10]);
+	packet_data->Answer_Value[1] = atoi(arr[11]);
+	free(arr);
+	return true;
+}
+
+PT_THREAD(handle_server_connection(struct psock *p)){
+	static uint8_t read_lenght;
+	static bool incomming_msg = false;
+	uint8_t blocks;
+
+
+	PSOCK_BEGIN(p);
+	while(1){
+		PSOCK_WAIT_UNTIL(p, SCP_data_in_buffer()||psock_newdata(p));
+
+		if((uip_datalen() > 0) && (psock_newdata(p))){
+			incomming_msg = true;
+			printf("SCP[%d]:new incomming data %d\r\n",clock_time(),psock_datalen(p));
+			Cur_SCP_packet = &Incomming_SCP_packet;
+		}else{
+			if(SCP_get_buffer() == NULL){
+				PT_YIELD(&p->pt);
+				continue;
+			}
+			incomming_msg = false;
+			printf("SCP[%d]: Send msg:%d msg_nr:%d grp_nr:%d %s\r\n",clock_time(), Cur_SCP_packet->Message_type, Cur_SCP_packet->SCP_msgID, Cur_SCP_packet->Group_nr,(Cur_SCP_packet->Process == NULL)?"":Cur_SCP_packet->Process->name);
+			etimer_set(&SCP_timeout_tm, CLOCK_SECOND * 35);
+			timer_set(&(Cur_SCP_packet->timeout), CLOCK_SECOND * 35);
+			PSOCK_GENERATOR_SEND(p,SCP_packet_to_data,(void *)Cur_SCP_packet);
+			printf("Send done\r\n");
+		}
+
+		SCP_Receive_Label://Receive packet
+		etimer_set(&SCP_timeout_tm, CLOCK_SECOND * 60);
+		timer_set(&(Cur_SCP_packet->timeout), CLOCK_SECOND * 60);
+		PSOCK_WAIT_UNTIL(p,uip_newdata());
+		blocks = *((uint8_t *)(uip_appdata));
+		if(blocks > 3){
+			log_error("SCP: Received to many blocks %d\r\n",blocks);
+			if(Cur_SCP_packet->error == E_PARSER_ERROR){
+				if(Cur_SCP_packet->Process != NULL){
+					process_post_synch(Cur_SCP_packet->Process, event_SCP, Cur_SCP_packet);
+				}
+			}else{
+				Cur_SCP_packet->Answer_Message_type = msg_Error;
+				Cur_SCP_packet->error = E_PARSER_ERROR;
+				continue;
+			}
+		}else{
+			read_lenght = (blocks * 16) + 10;
+			PSOCK_READBUF_LEN(p, read_lenght);
+			if(SCP_data_to_packet((char *)SCP_buffer,read_lenght,Cur_SCP_packet) == false){//when receiving failed send error
+				log_error("SCP: Parse Error\r\n");
+				if(Cur_SCP_packet->error == E_PARSER_ERROR){
+					if(Cur_SCP_packet->Process != NULL){
+						process_post_synch(Cur_SCP_packet->Process, event_SCP, Cur_SCP_packet);
+					}
+				}else{
+					Cur_SCP_packet->Answer_Message_type = msg_Error;
+					Cur_SCP_packet->error = E_PARSER_ERROR;
+					continue;
+				}
+			}else{
+				Cur_SCP_packet->error = E_NONE;
+				if(Cur_SCP_packet->Answer_SCP_msgID >= 0xFF){//incomming message
+					printf("SCP[%d]: received incomming msg:%d msg_nr:%d \r\n",clock_time(),Cur_SCP_packet->Answer_Message_type,Cur_SCP_packet->Answer_SCP_msgID);
+					//answer on incomming message
+					memmove(&Incomming_SCP_packet, Cur_SCP_packet, sizeof(SCP_pack_t));
+					SCP_execute_incoming_msg(&Incomming_SCP_packet, true);
+					Incomming_SCP_packet.SCP_msgID = Incomming_SCP_packet.Answer_SCP_msgID;
+					etimer_set(&SCP_timeout_tm, CLOCK_SECOND * 35);
+					printf("SCP[%d]: Send answer msg:%d msg_nr:%d grp_nr:%d\r\n",clock_time(), Incomming_SCP_packet.Message_type, Incomming_SCP_packet.SCP_msgID, Incomming_SCP_packet.Group_nr);
+					PSOCK_GENERATOR_SEND(p,SCP_packet_to_data,(void *)&Incomming_SCP_packet);
+					printf("Send done2\r\n");
+					if(incomming_msg == false){
+						printf("SCP[%d]:Back to receiving\r\n",clock_time());
+						goto SCP_Receive_Label;
+					}
+				}else{
+					printf("SCP[%d]: received msg:%d msg_nr:%d process: %s\r\n",clock_time(),Cur_SCP_packet->Answer_Message_type,Cur_SCP_packet->Answer_SCP_msgID,(Cur_SCP_packet->Process != NULL)?Cur_SCP_packet->Process->name:"-");
+					if(Cur_SCP_packet->Process != NULL){
+						process_post_synch(Cur_SCP_packet->Process, event_SCP, Cur_SCP_packet);
+					}else{
+						//answer on devinfo
+						if(SCP_execute_incoming_msg(Cur_SCP_packet, false)){
+							SCP_put_buffer(*Cur_SCP_packet, false);
+						}
+					}
+				}
+
+				g_SCP_error = E_NONE;
+			}
+
+		}
+		SCP_free_buffer();
+		etimer_set(&SCP_timeout_tm, CLOCK_SECOND * 9);
+	}
+	PSOCK_END(p);
+}
+
+PROCESS_THREAD(SCP_process, ev, data)
+{
+	static struct uip_conn * Connection;
+	static struct etimer poll_tm;
+	static uint8_t resolv_fin = 0;
+	static struct etimer delay_tm;
+
+	if(etimer_expired(&poll_tm)){
+		etimer_set(&poll_tm, CLOCK_SECOND);
+	}
+	SCP_timeout_handler();
+	PROCESS_BEGIN();
+	while(1){
+		if(ev == resolv_event_found){
+			if(get_resolv_ipaddr(&SCP_Resolv_handel, &g_Server_ipaddr, data)){
+				resolv_fin++;
+				if(backup_server_available == false){
+					break;
+				}
+			}
+
+			if(get_resolv_ipaddr(&SCP_Backup_Resolv_handel, &g_Backup_Server_ipaddr, data)){
+				resolv_fin++;
+			}
+
+			if(resolv_fin == 2){
+				break;
+			}
+		}
+		PROCESS_WAIT_EVENT();
+	}
+
+	PROCESS_WAIT_UNTIL(Net_settings.setup_done == true);
+
+	uip_ipaddr_t ipadddr;
+	uip_gethostaddr(&ipadddr);
+	DevInfo.SCP_devID = (ipadddr.u8[2]<<8) + (ipadddr.u8[3]);
+	DevInfo.SCP_devID = ini_getl("Device","DevID",DevInfo.SCP_devID,"Device id:",inifile_net);
+	printf("SCP: Multipass server: %d.%d.%d.%d on port %d \r\n",uip_ipaddr_to_quad(&g_Server_ipaddr), g_Server_port);
+	printf("SCP: Multipass devID: %d SCP_modnr: %d SCP_groupnr %d\r\n",DevInfo.SCP_devID,DevInfo.SCP_modnr,DevInfo.SCP_groupnr);
+
+	BUFFER_SCP_MSG_BOOT();
+	while(1){
+		PROCESS_WAIT_EVENT();
+		if((SCP_data_in_buffer() == true)||(Cur_SCP_packet != NULL)||(continuous_connection == true)){
+
+			if((use_backup_server == true)&&(backup_server_available == true)){
+				printf("SCP[%d]: Connect to backup server\r\n",clock_time());
+				Connection = tcp_connect(&g_Backup_Server_ipaddr, UIP_HTONS(g_Backup_Server_port),NULL);
+			}else{
+				printf("SCP[%d]: Connect to default server\r\n",clock_time());
+				Connection = tcp_connect(&g_Server_ipaddr, UIP_HTONS(g_Server_port),NULL);
+			}
+			connect_attempt++;
+			if(Connection == NULL){
+				printf("SCP: no connections available");
+				etimer_set(&poll_tm, CLOCK_SECOND*5);
+				PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&poll_tm));
+				etimer_set(&poll_tm, CLOCK_SECOND*5);
+				continue;
+			}
+			PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+			PSOCK_INIT(&ps_TX, (uint8_t *)SCP_buffer, sizeof(SCP_buffer));
+			if(uip_connected()){
+				printf("SCP[%d]: Connected\r\n",clock_time());
+				connect_attempt = 0;
+				etimer_set(&SCP_timeout_tm, CLOCK_SECOND * 5);
+				while(1){
+					if(ev == tcpip_event){
+						if(uip_closed() || uip_aborted() || uip_timedout()){
+							break;
+						}
+						if((etimer_expired(&SCP_timeout_tm)==true)&&(continuous_connection == false)){
+							printf("SCP:Timeout timer expired\r\n");
+							uip_close();
+							break;
+						}else{
+							handle_server_connection(&ps_TX);
+						}
+					}
+					PROCESS_WAIT_EVENT();
+				}
+			}
+
+			if(uip_closed()){
+				printf("SCP[%d]: closed %d\r\n",clock_time(),connect_attempt);
+				etimer_set(&delay_tm, CLOCK_SECOND/10);
+				PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&delay_tm));
+			}
+
+			if(uip_aborted()){
+				printf("SCP[%d]: aborted %d\r\n",clock_time(),connect_attempt);
+				etimer_set(&delay_tm, CLOCK_SECOND*5);
+				PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&delay_tm));
+
+			}
+
+			if(uip_timedout()){
+				printf("SCP[%d]: Uip timeout %d\r\n",clock_time(),connect_attempt);
+				if(connect_attempt == 1){
+					connect_attempt += 2;
+				}
+			}
+
+			if(connect_attempt > 2){
+				connect_attempt = 0;
+				if(use_backup_server == true){
+					g_SCP_error = E_CON_ERROR;
+					printf("SCP: Offline\r\n");
+				}
+				if(backup_server_available == true){
+					use_backup_server = true;
+					printf("SCP: Switch to backup server\r\n");
+				}else{
+					g_SCP_error = E_CON_ERROR;
+					printf("SCP: Offline\r\n");
+				}
+			}
+
+		}
+
+	}
+
+	PROCESS_END();
+}
+
+PROCESS_THREAD(SCP_devInfo_process, ev, data){
+	SCP_pack_t SCP_packet;
+	PROCESS_BEGIN();
+	etimer_set(&DevInfo_tm, CLOCK_SECOND * 10);
+	etimer_set(&DevInfo_check_tm, (DevInfo_interval < 60)?CLOCK_SECOND * 60:CLOCK_SECOND * DevInfo_interval);
+	while(1){
+		//check if server comm is ok else reset
+		if(etimer_expired(&DevInfo_check_tm)){
+			if(SCP_dev_reset == true){
+				if(Save_reset_enabled() == false){
+					Save_reset();
+					etimer_set(&DevInfo_check_tm, CLOCK_SECOND * (DevInfo_interval * 3));
+				}else{
+					Hard_reset();
+				}
+			}
+		}
+
+		//send devinfo;
+		if(etimer_expired(&DevInfo_tm)){
+			if(Net_settings.setup_done == false){
+				etimer_set(&DevInfo_tm, CLOCK_SECOND * 10);
+				continue;
+			}
+			if(use_backup_server == true){
+				printf("SCP: try to connect to default server\r\n");
+				tcp_connect(&g_Server_ipaddr, UIP_HTONS(g_Server_port),NULL);
+				PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+				if(uip_connected()){
+					printf("SCP: connected to default server\r\n");
+					use_backup_server = false;
+					uip_close();
+					connect_attempt = 0;
+				}else{
+					printf("SCP: connection remain on backup server\r\n");
+				}
+			}
+			PROCESS_SCP_SEND(&SCP_packet,_SCP_msg_DevInfo(&DevInfo));
+			if(SCP_packet.error == E_NONE){
+				g_SCP_error = E_NONE;
+				if(use_backup_server){
+					etimer_set(&DevInfo_check_tm, CLOCK_SECOND * 30);
+					etimer_set(&DevInfo_tm, CLOCK_SECOND *10);
+				}else{
+					etimer_set(&DevInfo_check_tm, CLOCK_SECOND * (DevInfo_interval * 3));
+					etimer_set(&DevInfo_tm, CLOCK_SECOND * DevInfo_interval);
+				}
+				if(SCP_packet.Answer_Message_type == msg_DevInfoOk){
+					SCP_msg_DevInfoOk__Setting(&SCP_packet, &DevInfo);
+					SCP_execute_incoming_msg(&SCP_packet, true);
+				}else{
+					SCP_execute_incoming_msg(&SCP_packet, true);
+					SCP_packet.Process = PROCESS_CURRENT();
+					SCP_put_buffer(SCP_packet, true);
+					PROCESS_WAIT_UNTIL(ev == event_SCP);
+					SCP_packet = *((SCP_pack_t *)data);
+				}
+			}else{
+				etimer_set(&DevInfo_tm, CLOCK_SECOND *10);
+			}
+		}
+
+
+		PROCESS_WAIT_EVENT();
+	}
+	PROCESS_END();
+}
+
+void SCP_handler(bool (* handler)(SCP_pack_t * packet_data),SCP_pack_t * packet_data){
+	if(handler){
+		if((handler)(packet_data)){
+			SCP_msg_Ok(packet_data);
+		}else{
+			SCP_msg_Error(packet_data);
+		}
+	}else{
+		SCP_msg_Error(packet_data);
+	}
+}
+
+
+bool SCP_execute_incoming_msg(SCP_pack_t * packet_data,bool need_answer){
+	switch(packet_data->Answer_Message_type){
+	case msg_DevInfo:
+		SCP_msg_DevInfoOk(packet_data);
+		break;
+	case msg_DevInfoOk:
+		return false;
+		break;
+	case msg_Reset:
+		if(packet_data->Answer_Value[0] == 0){
+			Save_reset();
+		}else{
+			Hard_reset();
+		}
+		SCP_msg_ResetOk(packet_data);
+		break;
+	case msg_OpenPoort:
+		if (SCP_Openpoort) SCP_Openpoort(packet_data);
+		SCP_msg_OpenPoortOk(packet_data);
+		break;
+	case msg_Retour:
+		SCP_handler(SCP_Retour, packet_data);
+		break;
+	case msg_Newprice:
+		SCP_handler(SCP_Newprice, packet_data);
+		break;
+	case msg_Mode:
+		SCP_handler(SCP_Mode, packet_data);
+		break;
+	case msg_NoodCode:
+		SCP_handler(SCP_Noodcode, packet_data);
+	case msg_Error:
+		break;
+	case msg_AMS_start:
+		SCP_handler(SCP_AMS_start, packet_data);
+		break;
+	case msg_Print:
+		SCP_handler(SCP_Print, packet_data);
+		break;
+	case msg_ReserveringBetaal:
+		SCP_handler(SCP_ReserveringBetaal, packet_data);
+		break;
+	default:
+		if(need_answer == true){
+			SCP_msg_Error(packet_data);
+		}else{
+			return false;
+		}
+
+		break;
+	}
+	return true;
+}

@@ -1,0 +1,725 @@
+#include "SCP_msg.h"
+#include <string.h>
+#include <time.h>
+#include <config.h>
+#include <Core/Util/build_defs.h>
+#include <Core/Peripherals/Net_Dev_Init.h>
+
+uint8_t SCP_hex_to_dec(uint8_t hex){
+	uint8_t value;
+	uint8_t min;
+	value = hex;
+	min = (value/256)*(96);
+	value %= 256;
+	min += (value/16)*(6);
+	value -= min;
+	return value;
+}
+
+void SCP_packet_init(SCP_pack_t * Packet){
+	Packet->SCP_msgID = 0;
+	Packet->Group_nr = 0;
+	Packet->Process = NULL;
+}
+
+/*1-msg_RFID_Present*/
+/*401-msg_QR_present*/
+SCP_pack_t _SCP_msg_Present(UID_t UID, uint8_t machine_type){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	if(UID.type == RFID_UID){
+		Packet.Message_type = msg_RFIDPresent;
+	}else if(UID.type == QR_UID){
+		Packet.Message_type = msg_QR_present;
+	}else{
+		SCP_msg_Error(&Packet);
+		return Packet;
+	}
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = machine_type;
+	return Packet;
+}
+
+
+/*11-msg_RFID_BijEuro*/
+/*411-msg_QR_BijEuro*/
+SCP_pack_t _SCP_msg_BijEuro(UID_t UID,int32_t Centen_Bij,msg_Reason_t Reason){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	if(UID.type == RFID_UID){
+		Packet.Message_type = msg_RFID_BijEuro;
+	}else if(UID.type == QR_UID){
+		Packet.Message_type = msg_QR_BijEuro;
+	}else{
+		SCP_msg_Error(&Packet);
+		return Packet;
+	}
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = Reason;
+	Packet.Value[1] = Centen_Bij;
+	return Packet;
+}
+
+/*12-msg_RFID_AfEuro*/
+/*412-msg_QR_AfEuro*/
+SCP_pack_t _SCP_msg_AfEuro(UID_t UID,int32_t Centen_af){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	if(UID.type == RFID_UID){
+		Packet.Message_type = msg_RFID_AfEuro;
+	}else if(UID.type == QR_UID){
+		Packet.Message_type = msg_QR_AfEuro;
+	}else{
+		SCP_msg_Error(&Packet);
+		return Packet;
+	}
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = Centen_af;
+	return Packet;
+}
+
+/*13-msg_RFID_MeldEuro*/
+/*413-msg_QR_MeldEuro*/
+SCP_pack_t _SCP_msg_MeldEuro(UID_t UID){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	if(UID.type == RFID_UID){
+		Packet.Message_type = msg_RFID_MeldEuro;
+	}else if(UID.type == QR_UID){
+		Packet.Message_type = msg_QR_MeldEuro;
+	}else{
+		SCP_msg_Error(&Packet);
+		return Packet;
+	}
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = 0;
+	return Packet;
+}
+
+
+/*15-msg_OpenPoort*/
+int32_t SCP_msg_OpenPoort__Poort(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+gate_action_t SCP_msg_OpenPoort__Action(SCP_pack_t * Packet){
+	return (gate_action_t) Packet->Answer_UID[0];
+}
+
+/*17-msg_GeefKaart*/
+SCP_pack_t _SCP_msg_Geefkaart(UID_t UID){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_GeefKaart;
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = 0;
+	return Packet;
+}
+
+/*18-msg_RFID_Betaald*/
+/*418-msg_QR_Betaald*/
+SCP_pack_t _SCP_msg_Betaald(UID_t UID, int32_t Centen){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	if(UID.type == RFID_UID){
+		Packet.Message_type = msg_RFID_Betaald;
+	}else if(UID.type == QR_UID){
+		Packet.Message_type = msg_QR_Betaald;
+	}else if(UID.type == NONE_UID){
+		Packet.Message_type = msg_Betaald;
+	}else{
+		SCP_msg_Error(&Packet);
+		return Packet;
+	}
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = Centen;
+	return Packet;
+}
+
+/*21-msg_RFID_BijEuroOk*/
+int32_t SCP_msg_BijEuroOk__Centen(SCP_pack_t * Packet){
+	return Packet->Answer_Value[0];
+}
+
+/*22-msg_RFID_AfEuroOk*/
+int32_t SCP_msg_AfEuroOk__Centen(SCP_pack_t * Packet){
+	return Packet->Answer_Value[0];
+}
+
+/*23-msg_RFID_HuidigEuro*/
+uint8_t SCP_msg_HuidigEuro__User(SCP_pack_t * Packet){
+	return Packet->Answer_UID[0];
+}
+
+int32_t SCP_msg_HuidigEuro__Centen(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/*25-msg_OpenPoortOk*/
+void SCP_msg_OpenPoortOk(SCP_pack_t * Packet){
+	SCP_packet_init(Packet);
+	Packet->Message_type = msg_OpenPoortOk;
+	memset (Packet->UID,0,7);
+	Packet->Value[0] = 0;
+	Packet->Value[1] = 0;
+}
+
+/*26-msg_ResetOk*/
+void SCP_msg_ResetOk(SCP_pack_t * Packet){
+	SCP_packet_init(Packet);
+	Packet->Message_type = msg_ResetOk;
+	memset (Packet->UID,0,7);
+	Packet->Value[0] = 0;
+	Packet->Value[1] = 0;
+}
+
+/*29-msg_RFID_Language*/
+/*429-msg_QR_Language*/
+SCP_pack_t _SCP_msg_Language(UID_t UID, Language_t language){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	if(UID.type == RFID_UID){
+		Packet.Message_type = msg_RFID_Language;
+	}else if(UID.type == QR_UID){
+		Packet.Message_type = msg_QR_Language;
+	}else{
+		SCP_msg_Error(&Packet);
+		return Packet;
+	}
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = language;
+	Packet.Value[1] = 0;
+	return Packet;
+}
+
+/*33-msg_RFID_Betaal*/
+int32_t SCP_msg_Betaal__Centen(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/*42-msg_Akkoord*/
+uint8_t SCP_msg_Akkoord__User(SCP_pack_t * Packet){
+	return Packet->Answer_UID[0];
+}
+
+int32_t SCP_msg_Akkoord__Poort(SCP_pack_t * Packet){
+	return Packet->Answer_UID[1];
+}
+
+bool SCP_msg_Akkoord__Trash(SCP_pack_t * Packet){
+	return (Packet->Answer_UID[2] & (1 << 0));
+}
+
+int32_t SCP_msg_Akkoord__ResvNr(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+
+
+
+/*43-msg_Error*/
+void SCP_msg_Error(SCP_pack_t * Packet){
+	SCP_packet_init(Packet);
+	Packet->Message_type = msg_Error;
+	memset (Packet->UID,0,7);
+	Packet->Value[0] = 0;
+	Packet->Value[1] = 0;
+}
+
+/*46-msg_NietAkkoord*/
+uint8_t SCP_msg_NietAkkoord__User(SCP_pack_t * Packet){
+	return Packet->Answer_UID[0];
+}
+
+bool SCP_msg_NietAkkoord__Trash(SCP_pack_t * Packet){
+	return (Packet->Answer_UID[2] & (1 << 0));
+}
+
+int32_t SCP_msg_NietAkkoord__ResvNr(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/*47-msg_Blokkade*/
+
+
+/*61-msg_DevInfo*/
+SCP_pack_t _SCP_msg_DevInfo(SCP_DevInfo_t * DevInfo){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	uint8_t printstackpointer;
+	void * ptr = malloc(64);
+	uint32_t rest = (uint32_t)&printstackpointer - (uint32_t)ptr;
+	free(ptr);
+
+	Packet.Message_type = msg_DevInfo;
+	memset(Packet.UID,0,7);
+	Packet.UID[0] = DevInfo->SCP_locnr;
+	Packet.UID[1] = DevInfo->SCP_modnr;
+	Packet.UID[2] = DevInfo->SCP_groupnr;
+	Packet.UID[3] = (DevInfo->SCP_dev_status >> 8) & 0xff;
+	Packet.UID[4] = (DevInfo->SCP_dev_status)& 0xff;
+	Packet.Value[0] = rest;
+	Packet.Value[1] = 0;
+	return Packet;
+}
+
+/*63-msg_DevInfoOk*/
+void SCP_msg_DevInfoOk(SCP_pack_t * Packet){
+	SCP_packet_init(Packet);
+	Packet->Message_type = msg_ResetOk;
+	memset (Packet->UID,0,7);
+	Packet->Value[0] = 0;
+	Packet->Value[1] = 0;
+}
+
+void SCP_msg_DevInfoOk__Setting(SCP_pack_t * Packet, SCP_DevInfo_t * DevInfo){
+	 if(DevInfo->Answer_Setting != Packet->Answer_UID[3]){
+		 process_post(PROCESS_BROADCAST, event_SCP, Packet);
+	 }
+	 DevInfo->Answer_Setting = Packet->Answer_UID[3];
+	 return;
+}
+
+/*64-msg_CashStatus*/
+SCP_pack_t _SCP_msg_CashStatus(SCP_Data_t value){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_CashStatus;
+	memmove(Packet.UID,value.UID,7);
+	Packet.Value[0] = value.Value[0];
+	Packet.Value[1] = value.Value[1];
+	return Packet;
+}
+
+/*66-msg_Boot*/
+SCP_pack_t _SCP_msg_Boot(void){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_Boot;
+	memset (Packet.UID,0,7);
+	Packet.UID[0] = MAJOR_VERSION;
+	Packet.UID[1] = MINOR_VERSION;
+
+	Packet.UID[3] = Net_settings.IP_address.u8[0];
+	Packet.UID[4] = Net_settings.IP_address.u8[1];
+	Packet.UID[5] = Net_settings.IP_address.u8[2];
+	Packet.UID[6] = Net_settings.IP_address.u8[3];
+
+	Packet.Value[0] = get_build_date_number();
+	Packet.Value[1] = get_build_time_number();
+	return Packet;
+}
+
+/*71-msg_DeurOpen*/
+SCP_pack_t _SCP_msg_DeurOpen(void){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_DeurOpen;
+	memset (Packet.UID,0,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = 0;
+	return Packet;
+}
+
+/*72-msg_DeurDicht*/
+SCP_pack_t _SCP_msg_DeurDicht(void){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_DeurDicht;
+	memset (Packet.UID,0,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = 0;
+	return Packet;
+}
+
+/*77-msg_NoodCode*/
+SCP_pack_t _SCP_msg_NoodCode(bool daycode, bool noodcode){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_NoodCode;
+	memset (Packet.UID,0,7);
+	if(daycode == true){
+		Packet.UID[5] = 0xFF;
+	}
+	if(noodcode == true){
+		Packet.UID[6] = 0xFF;
+	}
+	Packet.Value[0] = 0;
+	Packet.Value[1] = 0;
+	return Packet;
+}
+
+uint8_t SCP_msg_NoodCode__Noodcode(SCP_pack_t * Packet, char * code_str){
+	uint8_t code_len = Packet->Answer_UID[0];
+	int32_t code = Packet->Answer_Value[0];
+	uint8_t i;
+
+	for(i = 0; i < code_len; i++){
+		code_str[i] = ((code>>(i*2))&0x03) + '0';
+	}
+	code_str[i] = '\0';
+	return code_len;
+}
+
+uint8_t SCP_msg_NoodCode__Dagcode(SCP_pack_t * Packet, char * code_str){
+	uint8_t code_len = Packet->Answer_UID[1];
+	int32_t code = Packet->Answer_Value[1];
+	uint8_t i;
+
+	for(i = 0; i < code_len; i++){
+		code_str[i] = ((code>>(i*2))&0x03) + '0';
+	}
+	code_str[i] = '\0';
+	return code_len;
+}
+
+/*99-msg_Ok*/
+void SCP_msg_Ok(SCP_pack_t * Packet){
+	SCP_packet_init(Packet);
+	Packet->Message_type = msg_Ok;
+	memset (Packet->UID,0,7);
+	Packet->Value[0] = 0;
+	Packet->Value[1] = 0;
+}
+
+/*119-msg_ReserveringBetaal*/
+
+int32_t SCP_msg_ReserveringBetaal__Centen(SCP_pack_t * Packet){
+	return Packet->Answer_Value[0];
+}
+
+int32_t SCP_msg_ReserveringBetaal__ResvNr(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/*220-msg_GeefReservering*/
+SCP_pack_t _SCP_msg_GeefReservering(UID_t UID, int32_t ResvNr){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_GeefReservering;
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = ResvNr;
+	return Packet;
+}
+
+/* 221-msg_Reservering*/
+struct tm SCP_msg_Reservering__StartTime(SCP_pack_t * Packet){
+	struct tm StartTime;
+
+	StartTime.tm_sec =  0x00;
+	StartTime.tm_min =  SCP_hex_to_dec(Packet->Answer_UID[0]);
+	StartTime.tm_hour = SCP_hex_to_dec(Packet->Answer_UID[1]);
+	StartTime.tm_mday = Packet->Answer_Value[0];
+	StartTime.tm_year = SCP_hex_to_dec(Packet->Answer_UID[2]) + 100;
+	StartTime.tm_mon = 0;
+	StartTime.tm_isdst = -1;
+
+	if(mktime(&StartTime)==-1) {
+		printf("I cannot represent the calendar time :-(\n");
+	}
+
+	return StartTime;
+}
+
+
+struct tm SCP_msg_Reservering__EndTime(SCP_pack_t * Packet){
+	struct tm EndTime;
+
+	EndTime.tm_sec =  0x00;
+	EndTime.tm_min =  SCP_hex_to_dec(Packet->Answer_UID[3]);
+	EndTime.tm_hour = SCP_hex_to_dec(Packet->Answer_UID[4]);
+	EndTime.tm_mday = Packet->Answer_Value[1];
+	EndTime.tm_year = SCP_hex_to_dec(Packet->Answer_UID[5]) + 100;
+	EndTime.tm_mon = 0;
+	EndTime.tm_isdst = -1;
+
+	if(mktime(&EndTime) == -1) {
+		printf("I cannot represent the calendar time :-(\n");
+	}
+
+	return EndTime;
+}
+/* 222-msg_Reserveringprice*/
+SCP_pack_t _SCP_msg_ReserveringPrice(int32_t ResvNr){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_ReserveringPrice;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = ResvNr;
+	return Packet;
+}
+
+int32_t SCP_msg_ReserveringPrice__price(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/* 223-msg_ReserveringBetaald */
+SCP_pack_t _SCP_msg_ReserveringBetaald(int32_t ResvNr, int32_t Centen){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_ReserveringBetaald;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = Centen;
+	Packet.Value[1] = ResvNr;
+	return Packet;
+}
+
+/*224-msg_ReserveringStarted*/
+SCP_pack_t _SCP_msg_ReserveringStarted(uint16_t machine ,int32_t ResvNr){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_ReserveringStarted;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = machine;
+	Packet.Value[1] = ResvNr;
+	return Packet;
+}
+
+/*225-msg_ReserveringBooked*/
+SCP_pack_t _SCP_msg_ReserveringBooked(UID_t UID, uint16_t min, uint8_t machine_type){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	if(UID.type == RFID_UID){
+		Packet.Message_type = msg_RFID_ReserveringBooked;
+	}else if(UID.type == QR_UID){
+		Packet.Message_type = msg_QR_ReserveringBooked;
+	}else if(UID.type == NONE_UID){
+		Packet.Message_type = msg_ReserveringBooked;
+	}else{
+		SCP_msg_Error(&Packet);
+		return Packet;
+	}
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = min;
+	Packet.Value[1] = machine_type;
+	return Packet;
+}
+
+int32_t SCP_msg_ReserveringBooked__ResvNr(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/* 301-msg_LinkInfo*/
+SCP_pack_t _SCP_msg_LinkInfo(int32_t ResvNr){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_LinkInfo;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = ResvNr;
+	return Packet;
+}
+
+/* 302-msg_LinkInfoOk*/
+char * SCP_msg_LinkInfoOk__Color(SCP_pack_t * Packet, char * Color){
+	strncpy(Color,(char *)Packet->Answer_UID,7);
+	return Color;
+}
+
+int32_t SCP_msg_LinkInfoOk__ToLink(SCP_pack_t * Packet){
+	return Packet->Answer_Value[0];
+}
+
+int32_t SCP_msg_LinkInfoOk__Linked(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/* 303-msg_RFIDLink*/
+SCP_pack_t _SCP_msg_RFIDLink(UID_t UID,int32_t ResvNr){
+	SCP_pack_t Packet;
+	Packet.Message_type = msg_RFIDLink;
+	memmove(Packet.UID,UID.UID,7);
+	Packet.SCP_msgID = 0;
+	Packet.Value[0] = 0;
+	Packet.Value[1] = ResvNr;
+	return Packet;
+}
+
+/* 304-msg_RFIDLinkOk*/
+int32_t SCP_msg_RFIDLinkOk__ToLink(SCP_pack_t * Packet){
+	return Packet->Answer_Value[0];
+}
+
+int32_t SCP_msg_RFIDLinkOk__Linked(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/* 305-msg_RFIDUnlink*/
+SCP_pack_t _SCP_msg_RFIDUnlink(UID_t UID){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_RFIDUnlink;
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = 0;
+	return Packet;
+}
+
+SCP_pack_t _SCP_msg_RFIDUnlinkAll(int32_t ResvNr){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_RFIDUnlink;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = ResvNr;
+	return Packet;
+}
+
+/* 306-msg_RFIDUnlinkOk*/
+char * SCP_msg_RFIDUnlinkOk__Color(SCP_pack_t * Packet, char * Color){
+	strncpy(Color,(char *)Packet->Answer_UID,7);
+	return Color;
+}
+
+int32_t SCP_msg_RFIDUnlinkOk__ResvNr(SCP_pack_t * Packet){
+	return Packet->Answer_Value[0];
+}
+
+int32_t SCP_msg_RFIDUnlinkOk__Linked(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/*321-msg_Machine_started*/
+SCP_pack_t _SCP_msg_Machine_started(uint16_t machine, uint8_t machine_type){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_Machine_started;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = machine;
+	Packet.Value[1] = machine_type;
+	return Packet;
+}
+
+
+/*322-msg_Machine_stoped*/
+SCP_pack_t _SCP_msg_Machine_stoped(uint16_t machine){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_Machine_stoped;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = machine;
+	Packet.Value[1] = 0;
+	return Packet;
+}
+
+/*323-msg_Machine_available*/
+SCP_pack_t _SCP_msg_Machine_available(uint8_t machine_type){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_Machine_available;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = machine_type;
+	return Packet;
+}
+
+int32_t SCP_msg_Machine_available__min(SCP_pack_t * Packet){
+	return Packet->Answer_Value[0];
+}
+
+int32_t SCP_msg_Machine_available__Akkoord(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/*324-msg_Machine_present*/
+SCP_pack_t _SCP_msg_Machine_present(uint8_t machine_type, uint8_t subtype, uint8_t machine_present, uint16_t price, uint16_t tick_min){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_Machine_present;
+	Packet.UID[0] = machine_type;
+	Packet.UID[1] = subtype;
+	Packet.UID[2] = machine_present;
+	Packet.UID[3] = 0;
+	Packet.UID[4] = 0;
+	Packet.UID[5] = 0;
+	Packet.UID[6] = 0;
+	Packet.Value[0] = price;
+	Packet.Value[1] = tick_min;
+	return Packet;
+}
+
+
+/*331-msg_PoortOpen*/
+SCP_pack_t _SCP_msg_PoortOpen(UID_t UID, uint16_t poort){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	if(UID.type == RFID_UID){
+		Packet.Message_type = msg_RFID_PoortOpen;
+	}else if(UID.type == QR_UID){
+		Packet.Message_type = msg_QR_PoortOpen;
+	}else{
+		SCP_msg_Error(&Packet);
+		return Packet;
+	}
+	memmove(Packet.UID,UID.UID,7);
+	Packet.Value[0] = 0;
+	Packet.Value[1] = poort;
+	return Packet;
+}
+
+/*500-msg_Newprice*/
+int32_t SCP_msg_Newprice__Centen(SCP_pack_t * Packet){
+	return Packet->Answer_Value[0];
+}
+
+int32_t SCP_msg_Newprice__Machine(SCP_pack_t * Packet){
+	return Packet->Answer_Value[1];
+}
+
+/*501-msg_Mode*/
+
+/* 600-msg_Alert*/
+SCP_pack_t _SCP_msg_Alert(uint16_t Alert,uint16_t Specify){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_Alert;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = Alert;
+	Packet.Value[1] = Specify;
+	return Packet;
+}
+
+/* 601-msg_Printer_status*/
+SCP_pack_t _SCP_msg_Printer_status(uint16_t Printer_state, uint16_t printer){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_Printer_status;
+	memset(Packet.UID,0,7);
+	Packet.Value[0] = Printer_state;
+	Packet.Value[1] = printer;
+	return Packet;
+}
+
+/* 602-msg_Transaction_done*/
+SCP_pack_t _SCP_msg_Transaction_done(int16_t multipass_payed, int16_t cash_payed, int16_t bank_payed){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_Transaction_done;
+	memset(Packet.UID,0,7);
+	Packet.UID[0] = (multipass_payed/100);
+	Packet.UID[1] = (multipass_payed%100);
+	Packet.Value[0] = cash_payed;
+	Packet.Value[1] = bank_payed;
+	return Packet;
+}
+
+/* 604-msg_Poort_status*/
+SCP_pack_t _SCP_msg_Poort_status(gate_action_t action,uint8_t status, int16_t poort){
+	SCP_pack_t Packet;
+	SCP_packet_init(&Packet);
+	Packet.Message_type = msg_Poort_status;
+	memset(Packet.UID,0,7);
+	Packet.UID[0] = action;
+	Packet.UID[1] = status;
+	Packet.Value[0] = 0;
+	Packet.Value[1] = poort;
+	return Packet;
+}
+

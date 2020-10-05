@@ -1,0 +1,655 @@
+#include <config.h>
+#ifdef AMS_MODULE
+#include "AMS.h"
+#include "AMS_command.h"
+#include "AMS_types.h"
+#include <Core/Process/process.h>
+#include <Core/Peripherals/Net_Dev_Init.h>
+#include <Core/Timer/etimer.h>
+#include <Core/Extensions/ini/minGlue-FatFs.h>
+#include <Core/Extensions/ini/minIni.h>
+#include <Core/Debug/Debug_Terminal.h>
+#include <Core/Memory/IAP.h>
+#include <Core/protocol/Secure/aes/aes.h>
+#include <Core/protocol/Secure/sha1/sha1.h>
+#include <Core/protocol/Checksum/crc16/crc16_CCITT.h>
+#include <Core/protocol/Net/SCP/SCP_Comm.h>
+#include <Core/protocol/Net/SCP/SCP_msg.h>
+
+#define AMS_NO_ENCRYPT_AES_REF 2
+#define AMS_ENCRYPT_AES_REF 3
+#define AMS_HEADER_LENGHT 23
+
+/*global variables*/
+uip_ipaddr_t g_AMS_Server_ipaddr;
+uint16_t g_AMS_Server_port;
+void * g_AMS_Resolv_handel;
+uint32_t g_AMS_interval = 10;
+struct etimer g_AMS_interval_tm;
+uint8_t g_AMS_msg_id;
+
+AMS_packet_t g_AMS_data_packet;
+AMS_packet_buffer_t * g_AMS_send_buffer = NULL;
+AMS_cmd_type_t g_AMS_data_type;
+char * g_data_file = NULL;
+uint16_t g_AMS_file_port;
+uint16_t g_AMS_crc;
+uint32_t g_AMS_write_ptr;
+struct uip_conn * AMS_conn;
+
+const char AMS_KEY[8] = {0xc2,0x99,0x8c,0x68,0x41,0xff,0x92,0x3a};
+
+/*prototype*/
+PROCESS(AMS_process, "Arm management system process");
+PROCESS(AMS_data_process, "data stream process");
+bool AMS_parse_header(void);
+uint32_t AMS_packet_to_data(AMS_packet_t * packet);
+uint32_t AMS_Encrypt(bool encrypt, char * buffer_in, uint32_t lenght, char * buffer_out);
+void AMS_Decrypt(char * buffer_in,uint8_t lenght,char * buffer_out);
+void AMS_set_interval_timer(void);
+void AMS_remove_backup_bin(void);
+
+//---------------------------------command connection------------------------------------------------------
+
+/*global functions*/
+void AMS_init(void){
+	g_AMS_Server_port = ini_getl("AMS", "Server_Port",9001,"Port of AMS server:", inifile_net);
+	process_start(&AMS_process,NULL);
+}
+
+bool SCP_AMS_start(SCP_pack_t * packet_data){
+	g_AMS_interval = 5;
+	AMS_set_interval_timer();
+	return true;
+}
+
+void AMS_send_command(AMS_packet_t packet){
+	AMS_packet_buffer_t * find_last = g_AMS_send_buffer;
+
+	if(packet.command == M_NONE){
+		return;
+	}
+	printf("AMS: add command to buffer (%d)\r\n",packet.command);
+	etimer_set(&g_AMS_interval_tm,10);
+	if(g_AMS_send_buffer == NULL){
+		g_AMS_send_buffer = malloc(sizeof(AMS_packet_t));
+		g_AMS_send_buffer->packet = packet;
+		g_AMS_send_buffer->next = NULL;
+		return;
+	}
+	while(1){
+		if(find_last->next == NULL){
+			break;
+		}
+		find_last = find_last->next;
+	}
+	find_last->next = malloc(sizeof(AMS_packet_t));
+	find_last = find_last->next;
+	find_last->packet = packet;
+	find_last->next = NULL;
+	return;
+}
+
+void AMS_send_data(void){
+	uint32_t lenght;
+	AMS_packet_buffer_t * packet;
+
+	if(g_AMS_send_buffer != NULL){
+		packet = g_AMS_send_buffer;
+		lenght = AMS_packet_to_data(&packet->packet);
+		uip_send(uip_appdata, lenght);
+		printf("AMS: send buffer len:(%d) command:(%d) \r\n",lenght,packet->packet.command);
+		g_AMS_send_buffer = g_AMS_send_buffer->next;
+		if(packet->packet.raw != NULL){
+			free(packet->packet.raw);
+		}
+		free(packet);
+	}
+	return;
+}
+
+/*local functions*/
+PROCESS_THREAD(AMS_process, ev, data)
+{
+	static struct etimer poll_tm;
+
+	if(etimer_expired(&poll_tm)){
+		etimer_set(&poll_tm,CLOCK_SECOND);
+	}
+
+	PROCESS_BEGIN();
+
+	PROCESS_WAIT_UNTIL(Net_settings.setup_done == true);//wait for Ethernet settings done
+	ini_resolv_ipaddr(&g_AMS_Resolv_handel,"AMS", "Server_URL", "AMS.custommate.eu", "URL or IP of Arm management server:", inifile_net);//start ip resolver
+	//Wait for resolver
+	while(ev != PROCESS_EVENT_EXIT){
+		if(ev == resolv_event_found){
+			if(get_resolv_ipaddr(&g_AMS_Resolv_handel, &g_AMS_Server_ipaddr, data)){
+				printf("AMS: server: %d.%d.%d.%d on port %d \r\n",uip_ipaddr_to_quad(&g_AMS_Server_ipaddr), g_AMS_Server_port);
+				AMS_set_interval_timer();
+				break;
+			}
+		}
+		PROCESS_WAIT_EVENT();
+	}
+
+	//start connection
+	while(ev != PROCESS_EVENT_EXIT){
+		//start connection
+		AMS_conn = tcp_connect(&g_AMS_Server_ipaddr, UIP_HTONS(g_AMS_Server_port),NULL);
+		if(AMS_conn == NULL){
+			  log_error("AMS: no connections available\r\n");
+			  break;
+		}
+		PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+		if(!uip_connected()){printf("AMS: failed to connect\r\n"); AMS_set_interval_timer(); goto try_again;}
+		printf("AMS: connected\r\n");
+		//send connect message when there is no data in the buffer
+		if(g_AMS_send_buffer == NULL){
+			AMS_remove_backup_bin();
+			AMS_connect_msg(true);
+		}
+		do{
+			if(ev == tcpip_event){
+				if(uip_poll()){
+					AMS_send_data();
+				}
+
+				if(uip_newdata() && !uip_connected()){
+					AMS_parse_header();
+				}
+			}
+			PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+		}while(!(uip_closed() || uip_aborted() || uip_timedout()));
+		printf("AMS: connection closed\r\n");
+		AMS_set_interval_timer();
+		try_again:
+		PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&g_AMS_interval_tm));
+	}
+	PROCESS_END();
+}
+
+void AMS_set_interval_timer(void){
+	uint32_t max_AMS_interval;
+	uint32_t AMS_interval;
+
+	srand(clock_seconds());
+
+	max_AMS_interval = ini_getl("AMS", "AMS_interval",3600,"Interval for connecting to server", inifile_net);
+
+	if(g_AMS_interval > 180){
+		AMS_interval = (g_AMS_interval - 60) + (rand() % 60);
+	}else{
+		AMS_interval = g_AMS_interval + (rand() % (g_AMS_interval/4));
+	}
+
+	if((g_AMS_interval * 2) > max_AMS_interval){
+		g_AMS_interval = max_AMS_interval;
+	}else{
+		g_AMS_interval = g_AMS_interval * 2;
+	}
+
+	etimer_set(&g_AMS_interval_tm,CLOCK_SECOND*AMS_interval);
+}
+
+uint32_t AMS_packet_to_data(AMS_packet_t * packet){
+	uint32_t Serial_Number[5];
+	read_serial_number(Serial_Number);
+	uint8_t * buffer;
+	uint32_t buf_len = 0;
+
+	packet->header.AMS_version = ASM_VERSION;
+	memmove(&packet->header.UID,&Serial_Number[1],16);
+	packet->header.msg_id = g_AMS_msg_id;
+
+	if(packet->header.conn_type == COMMAND){
+		buffer = malloc(AMS_HEADER_LENGHT + packet->header.data_lenght);
+	}else{
+		buffer = malloc(AMS_HEADER_LENGHT);
+	}
+
+	if(buffer == NULL){
+		log_error("AMS: malloc failed\r\n");
+		return 0;
+	}
+	buffer[0]  = packet->header.AMS_version;
+	buffer[1]  = packet->header.data_lenght >> 24;
+	buffer[2]  = packet->header.data_lenght >> 16;
+	buffer[3]  = packet->header.data_lenght >> 8;
+	buffer[4]  = packet->header.data_lenght >> 0;
+	buffer[5]  = packet->header.conn_type;
+	buffer[6]  = packet->header.msg_id;
+	buffer[7]  = packet->header.UID[0] >> 24;
+	buffer[8]  = packet->header.UID[0] >> 16;
+	buffer[9]  = packet->header.UID[0] >> 8;
+	buffer[10] = packet->header.UID[0] >> 0;
+	buffer[11] = packet->header.UID[1] >> 24;
+	buffer[12] = packet->header.UID[1] >> 16;
+	buffer[13] = packet->header.UID[1] >> 8;
+	buffer[14] = packet->header.UID[1] >> 0;
+	buffer[15] = packet->header.UID[2] >> 24;
+	buffer[16] = packet->header.UID[2] >> 16;
+	buffer[17] = packet->header.UID[2] >> 8;
+	buffer[18] = packet->header.UID[2] >> 0;
+	buffer[19] = packet->header.UID[3] >> 24;
+	buffer[20] = packet->header.UID[3] >> 16;
+	buffer[21] = packet->header.UID[3] >> 8;
+	buffer[22] = packet->header.UID[3] >> 0;
+	switch(packet->header.conn_type){
+	case COMMAND:
+		buffer[23] = packet->command >> 8;
+		buffer[24] = packet->command >> 0;
+		buffer[25] = packet->cmd_type;
+		memmove(&buffer[26],packet->raw,packet->header.data_lenght-3);
+		printf("AMS: send command:(%d) \r\n",packet->command);
+		buf_len = AMS_Encrypt(packet->encrypted,(char *)buffer,AMS_HEADER_LENGHT + packet->header.data_lenght,(char *)uip_appdata);
+		break;
+	case FILE_DATA:
+		printf("AMS: send data \r\n");
+		buf_len = AMS_Encrypt(packet->encrypted,(char *)buffer,AMS_HEADER_LENGHT,(char *)uip_appdata);
+		break;
+	case RAW_DATA:
+		buf_len = AMS_Encrypt(packet->encrypted,(char *)buffer,AMS_HEADER_LENGHT,(char *)uip_appdata);
+		break;
+	default:
+		break;
+	}
+
+	//buf_len = AMS_Encrypt(packet->encrypted,(char *)buffer,AMS_HEADER_LENGHT + packet->header.data_lenght,(char *)uip_appdata);
+	free(buffer);
+	return buf_len;
+
+}
+
+bool AMS_parse_header(void){
+	AMS_packet_t packet;
+	uint8_t blocks;
+	uint8_t * buffer;
+	uint32_t read_lenght;
+
+	blocks = *((uint8_t *)(uip_appdata));
+	if(blocks > 66){
+		log_error("ATM: Received to many blocks %d\r\n",blocks);
+		return false;
+	}else{
+		read_lenght = (blocks * 16) + 10;
+		buffer = malloc(read_lenght);
+		if(buffer == NULL){
+			log_error("AMS: malloc failed\r\n");
+			return false;
+		}
+		if(*((uint8_t *)uip_appdata + 1) == AMS_ENCRYPT_AES_REF ){
+			AMS_Decrypt((char *)uip_appdata + 2,(read_lenght-2),(char *)buffer);
+		}else{
+			memmove(buffer,uip_appdata + 2,read_lenght-2);
+		}
+		packet.header.AMS_version = buffer[0];
+		packet.header.data_lenght = buffer[1] << 24;
+		packet.header.data_lenght = buffer[2] << 16;
+		packet.header.data_lenght = buffer[3] << 8;
+		packet.header.data_lenght = buffer[4] << 0;
+		packet.header.conn_type = buffer[5];
+		packet.header.msg_id = buffer[6];
+
+		switch(packet.header.conn_type){
+		case COMMAND:
+			packet.command = (buffer[7] << 8)| buffer[8];
+			packet.cmd_type = buffer[9];
+			packet.raw = (buffer + 10);
+			return AMS_execute_command(&packet);
+		case FILE_DATA:
+			packet.raw = (buffer + 7);
+			break;
+		default:
+			break;
+		}
+		free(buffer);
+		return true;
+	}
+}
+
+uint32_t AMS_Encrypt(bool encrypt, char * buffer_in, uint32_t lenght, char * buffer_out){
+
+	static AES_KEY SCP_AES_KEY;
+	SHA1Context SCP_SHA1;
+	char key[16];
+	uint8_t Key_hash[SHA1_HASH_SIZE];
+	uint8_t i;
+	uint8_t blocks;
+
+	blocks = ((lenght-1)/16)+1;
+
+	buffer_out[0] = blocks;
+	buffer_out[1] = (encrypt == 1)?AMS_ENCRYPT_AES_REF:AMS_NO_ENCRYPT_AES_REF;
+
+	if(encrypt == true){
+		//put salt and pepper together
+		memmove(key,AMS_KEY,8);
+		for(i=0; i<8; i++){
+			key[8+i] = rand() % 255;
+			buffer_out[2+i] = key[8+i];
+		}
+
+		//create sha1 hash
+		SHA1Init (&SCP_SHA1);
+		SHA1Update (&SCP_SHA1, key, 16);
+		SHA1Final (&SCP_SHA1,Key_hash);
+
+
+		//encrypt data with AES
+		AES_set_encrypt_key((unsigned char *)Key_hash,128,&SCP_AES_KEY);
+		for(i = 0; i < blocks; i++){
+			AES_ecb_encrypt((unsigned char *)&buffer_in[i*16] ,(unsigned char *)&buffer_out[10+(i*16)] ,&SCP_AES_KEY, AES_ENCRYPT);
+		}
+		return 10+(blocks*16);
+	}else{
+			memmove(&buffer_out[2],buffer_in,lenght);
+			return 2 + lenght;
+	}
+}
+
+void AMS_Decrypt(char * buffer_in,uint8_t lenght,char * buffer_out){
+	static AES_KEY SCP_AES_KEY;
+	SHA1Context SCP_SHA1;
+	char key[16];
+	uint8_t Key_hash[SHA1_HASH_SIZE];
+	uint8_t i, blocks;
+
+	blocks = ((lenght-8)/16);
+
+	//put salt and pepper together
+	memmove(key,AMS_KEY,8);
+	for(i=0; i<8; i++){
+		key[8+i] = buffer_in[i];
+	}
+
+	//create sha1 hash
+	SHA1Init (&SCP_SHA1);
+	SHA1Update (&SCP_SHA1, key, 16);
+	SHA1Final (&SCP_SHA1,Key_hash);
+
+	//encrypt data with AES
+	AES_set_decrypt_key((unsigned char *)Key_hash,128,&SCP_AES_KEY);
+	for(i = 0; i < blocks; i++){
+		AES_ecb_encrypt((unsigned char *)&buffer_in[(i*16)+8] ,(unsigned char *)&buffer_out[i*16] ,&SCP_AES_KEY, AES_DECRYPT);
+	}
+	return;
+}
+
+void AMS_remove_backup_bin(void){
+	FATFS Fatfs;
+	f_mount(&Fatfs,"SD1:",1);
+	f_unlink("SD1:/OLD\\BACKUP.BIN");
+	f_rename("SD1:/BACKUP.BIN","SD1:/OLD\\BACKUP.BIN");
+}
+
+//---------------------------------data connection------------------------------------------------------
+bool AMS_data_openfile();
+bool AMS_data_send();
+bool AMS_data_receive();
+void AMS_data_check();
+
+PROCESS_THREAD(AMS_data_process, ev, data)
+{
+	static struct uip_conn * AMS_data_conn;
+    uint32_t lenght;
+
+	PROCESS_BEGIN();
+	//start connection
+	AMS_data_conn = tcp_connect(&g_AMS_Server_ipaddr, UIP_HTONS(g_AMS_file_port),NULL);
+	if(AMS_data_conn == NULL){
+		  log_error("AMS data: no connections available\r\n");
+		  PROCESS_EXIT();
+	}
+	PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+	if(!uip_connected()){printf("AMS data: failed to connect\r\n"); PROCESS_EXIT();}
+	printf("AMS data: data connected\r\n");
+
+	if(g_AMS_data_packet.header.conn_type == FILE_DATA){
+		//open file
+		if(AMS_data_openfile() == false){
+			uip_close();
+			PROCESS_EXIT();
+		}
+	}
+	//send header
+	lenght = AMS_packet_to_data(&g_AMS_data_packet);
+	uip_send(uip_appdata, lenght);
+	do{
+		if(ev == tcpip_event){
+			//send data
+			if(uip_poll()){
+				if(AMS_data_send() == false){
+				}
+			}
+
+			//receive data
+			if(uip_newdata()){
+				printf("AMS data: new data\r\n");
+				if(AMS_data_receive() == false){
+				}
+			}
+		}
+		PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+	}while(!(uip_closed() || uip_aborted() || uip_timedout()));
+	printf("AMS data: Data connection closed\r\n");
+	if(g_AMS_data_type == T_DOWNLOAD){
+		AMS_data_check();
+	}
+	free(g_data_file);
+	g_data_file = NULL;
+
+	PROCESS_END();
+}
+
+uint16_t AMS_Calc_file_crc(char * filename){
+	 uint8_t buffer[100];
+	 FRESULT rc;
+	 FIL file;
+	 FATFS Fatfs;
+	 uint16_t crc = 0;
+	 UINT br;
+
+	 //mount sd card
+	 rc = f_mount(&Fatfs,"SD1:",1);
+	 if(rc != FR_OK){
+		 AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+		 return 0;
+	 }
+	 //open tmp file
+	 rc = f_open(&file,filename,FA_READ);
+	 AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+	 //calc crc16
+	 while(1){
+		 rc = f_read(&file, buffer, sizeof(buffer), &br);
+		 if(rc != FR_OK){
+			 AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+			 return 0;
+		 }
+		 crc = crc16ccitt_xmodem_remainder(buffer, br, crc);
+		 if(br != sizeof(buffer)){
+			 break;
+		 }
+	 }
+	 rc = f_close(&file);
+	 rc = f_mount(NULL,"SD1:",0);//unmount
+	 return crc;
+}
+
+void AMS_data_check(void){
+	 uint8_t buffer[100];
+	 FRESULT rc;
+	 FIL file,file2;
+	 FATFS Fatfs;
+	 UINT br, bw;
+	 uint16_t crc = 0;
+
+	 //check crc
+	 crc = AMS_Calc_file_crc("SD1:/download.tmp");
+	 if(g_AMS_crc != crc){
+		 printf("AMS: crc error recv=(%d) calc=(%d)\r\n",g_AMS_crc,crc);
+		 AMS_send_command(AMS_error_msg(false,M_FILESHARE,5));
+	 }else{
+		 //mount sd card
+		 rc = f_mount(&Fatfs,"SD1:",1);
+		 if(rc != FR_OK){
+			 AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+			 return;
+		 }
+		 //open tmp file
+		 rc = f_open(&file,"SD1:/download.tmp",FA_READ);
+		 AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+
+		 //copy data from tmp to orginal file
+		 rc = f_lseek(&file,0);
+		 AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+		 rc = f_open(&file2,g_data_file,FA_CREATE_ALWAYS | FA_WRITE);
+		 if((rc != FR_OK) && (rc != FR_EXIST)){
+			 AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+			 return;
+		 }
+		 while(1){
+			 rc = f_read(&file, buffer, sizeof(buffer), &br);
+			 if(rc != FR_OK){
+				 AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+				 return;
+			 }
+			 rc = f_write(&file2, buffer, br, &bw);
+			 if(rc != FR_OK){
+				 AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+				 return;
+			 }
+			 if(br != sizeof(buffer)){
+				 break;
+			 }
+		 }
+		 if(rc != FR_OK){
+			 printf("AMS data: rename failed (%d)\r\n",rc);
+		 }else{
+			 printf("AMS data: file %s done\r\n",g_data_file);
+			 AMS_send_command(AMS_FileShare_data_done_msg(false, crc));
+		 }
+		 rc = f_close(&file2);
+		 rc = f_close(&file);
+		 rc = f_unlink("SD1:/download.tmp");
+		 rc = f_mount(NULL,"SD1:",0);//unmount
+	 }
+
+}
+
+bool AMS_data_openfile(void){
+	 FRESULT rc;
+	 uint32_t file_size;
+	 FIL file;
+	 FATFS Fatfs;
+
+	 //mount sd card
+	  rc = f_mount(&Fatfs,"SD1:",1);
+	  if(rc != FR_OK){
+		  printf("AMS data: failed mounting sd card (%d)\r\n",rc);
+		  AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+		  return false;
+	  }
+
+	  switch(g_AMS_data_type){
+	  case T_DOWNLOAD:
+		  rc = f_open(&file,"SD1:/download.tmp",FA_CREATE_ALWAYS | FA_WRITE);
+		  break;
+	  case T_UPLOAD:
+		  rc = f_open(&file,g_data_file,FA_READ);
+		  g_AMS_write_ptr = 0;
+		  break;
+	  case T_LIST:
+		  break;
+	  default:
+		  rc = f_mount(NULL,"SD1",0);//unmount
+		  return false;
+	  }
+	  if((rc != FR_OK) && (rc != FR_EXIST)){
+		  printf("AMS data: Opening file failed(%d)\r\n",rc);
+		  rc = f_mount(NULL,"SD1",0);//unmount
+		  AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+		  return false;
+	  }
+	  if(g_AMS_data_type == T_UPLOAD){
+		  file_size = f_size(&file);
+		  g_AMS_data_packet.header.data_lenght = file_size;
+	  }
+
+	  rc = f_close(&file);
+	  rc = f_mount(NULL,"SD1:",0);//unmount
+
+	  return true;
+}
+
+bool AMS_data_send(void){
+	FRESULT rc;
+	FIL file;
+	FATFS Fatfs;
+	uint8_t buffer[1024];
+	UINT br;
+
+	switch(g_AMS_data_type){
+		  case T_UPLOAD:
+			  rc = f_mount(&Fatfs,"SD1:",1);
+			  AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+			  rc = f_open(&file,g_data_file,FA_READ);
+			  AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+			  rc = f_lseek(&file,g_AMS_write_ptr);
+			  rc = f_read(&file, buffer, sizeof(buffer), &br);
+			  if(rc == FR_OK){
+				  printf("AMS data: Send %d bytes\r\n",br);
+			  }else{
+				  AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+				  printf("AMS data: Sending failed (%d)\r\n",rc);
+				  g_AMS_data_type = T_NONE;
+				  break;
+			  }
+			  uip_send(buffer, br);
+			  g_AMS_write_ptr += br;
+			  rc = f_close(&file);
+			  rc = f_mount(NULL,"SD1:",0);//unmount
+			  if(br != sizeof(buffer)){
+				  uint16_t crc;
+				  g_AMS_data_type = T_NONE;
+				  crc = AMS_Calc_file_crc(g_data_file);
+				  AMS_send_command(AMS_FileShare_data_done_msg(false,crc));
+			  }
+			  break;
+		  default:
+			  return false;
+			  break;
+	}
+	return true;
+}
+
+bool AMS_data_receive(void){
+	FRESULT rc;
+	FIL file;
+	FATFS Fatfs;
+	UINT len, bw;
+
+	switch(g_AMS_data_type){
+		  case T_DOWNLOAD:
+			  rc = f_mount(&Fatfs,"SD1:",1);
+			  AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+			  rc = f_open(&file,"SD1:/download.tmp",FA_WRITE|FA_OPEN_EXISTING);
+			  AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+			  rc = f_lseek(&file, f_size(&file));
+			  len = uip_datalen();
+			  rc = f_write(&file, uip_appdata, len, &bw);
+			  if((rc != FR_OK) || (len != bw)){
+				  AMS_send_command(AMS_file_error_msg(false,M_FILESHARE,rc));
+				  printf("AMS data: failed writing file (%d)\r\n",rc);
+			  }else{
+				  printf("AMS data: Receive %d bytes\r\n",len);
+			  }
+			  rc = f_close(&file);
+			  rc = f_mount(NULL,"SD1:",0);//unmount
+			  break;
+		  default:
+			  break;
+	}
+	return true;
+}
+#endif

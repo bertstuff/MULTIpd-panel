@@ -1,0 +1,194 @@
+#include <Driver/include/lpc17xx_gpio.h>
+#include <Core/Extensions/ini/minIni.h>
+#include <Core/Process/process.h>
+#include <Core/Timer/etimer.h>
+#include <Core/Clock/Time_functions.h>
+#include <Processes/dev_reset.h>
+#include <Core/protocol/Net/SCP/SCP_Comm.h>
+#include <Core/protocol/Net/SCP/SCP_msg.h>
+#include <Global.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include "Power.h"
+#include <Core/Util/array.h>
+
+
+#define CON1 (1<<2)
+#define CON2 (1<<3)
+#define CON3 (1<<4)
+#define CON4 (1<<5)
+#define CON5 (1<<6)
+#define CON6 (1<<7)
+#define CON7 (1<<8)
+#define CON8 (1<<9)
+
+/*prototype*/
+PROCESS(SCR_idle_screen, "idle screen");
+
+void check_manual_input(void);
+
+//screen process
+PROCESS_THREAD(SCR_idle_screen, ev, data)
+{
+	static SCP_pack_t * SCP_Packet;
+	static struct etimer poll_tm;
+	static uint8_t i,j;
+	uint16_t Devices_list[5];
+	char varname_buffer[10];
+
+	if(etimer_expired(&poll_tm)){
+		etimer_set(&poll_tm, CLOCK_SECOND * 5);
+	}
+
+	check_manual_input();
+
+	PROCESS_BEGIN();
+
+	g_Mdata[0].Number = ini_getl("Energy_point","Energy_point1_nr",1,"Energy point number of output 1:",inifile_machine);
+	g_Mdata[1].Number = ini_getl("Energy_point","Energy_point2_nr",2,"Energy point number of output 2:",inifile_machine);
+	g_Mdata[2].Number = ini_getl("Energy_point","Energy_point3_nr",3,"Energy point number of output 3:",inifile_machine);
+	g_Mdata[3].Number = ini_getl("Energy_point","Energy_point4_nr",4,"Energy point number of output 4:",inifile_machine);
+	g_Mdata[4].Number = ini_getl("Energy_point","Energy_point5_nr",5,"Energy point number of output 5:",inifile_machine);
+	g_Mdata[5].Number = ini_getl("Energy_point","Energy_point6_nr",6,"Energy point number of output 6:",inifile_machine);
+	g_Mdata[6].Number = ini_getl("Energy_point","Energy_point7_nr",7,"Energy point number of output 7:",inifile_machine);
+	g_Mdata[7].Number = ini_getl("Energy_point","Energy_point8_nr",8,"Energy point number of output 8:",inifile_machine);
+
+	for( i=0; i<8; i++){
+		while(1){
+			PROCESS_PT_SCP_MSG_RESERVERINGMACHINE(&SCP_Packet, g_Mdata[i].Number, 0);
+			if(SCP_Packet->Data.Message_type == msg_ReserveringMachine){
+				g_Mdata[i].Resvnr = SCP_msg_ReserveringMachine__ResvNr(SCP_Packet);
+			}else if(SCP_Packet->Data.Message_type == msg_Onbekend){
+				g_Mdata[i].Resvnr = 0;
+				g_Mdata[i].State = ST_NO_RESERVATION;
+				power_disable(g_Mdata[i].Number);
+				break;
+			}else{
+				continue;
+			}
+
+			PROCESS_PT_SCP_MSG_GEEFRESERVERING(&SCP_Packet, g_Empty_UID, g_Mdata[i].Resvnr, 0);
+			if(SCP_Packet->Data.Message_type == msg_Reservering){
+				g_Mdata[i].Start_time = SCP_msg_Reservering__StartTime(SCP_Packet);
+				g_Mdata[i].End_time = SCP_msg_Reservering__EndTime(SCP_Packet);
+				printf ( "Reservation output%d form %s",i+1,asctime (LocalTime(&g_Mdata[i].Start_time)));
+				printf ( " to %s\r\n",asctime (LocalTime(&g_Mdata[i].End_time)) );
+				g_Mdata[i].State = ST_WAIT_RESERVATION;
+				if(CurTime_in_periode(g_Mdata[i].Start_time, g_Mdata[i].End_time, false) != 0){
+					power_disable(g_Mdata[i].Number);
+				}
+				break;
+			}else if(SCP_Packet->Data.Message_type == msg_Onbekend){
+				g_Mdata[i].Resvnr = 0;
+				g_Mdata[i].State = ST_NO_RESERVATION;
+				power_disable(g_Mdata[i].Number);
+				break;
+			}
+		}
+		g_Mdata[i].refresh_data = false;
+	}
+
+
+	while(ev != PROCESS_EVENT_EXIT){
+		Save_reset_poll();
+
+
+		if(ev == PROCESS_EVENT_TIMER){
+			for( i = 0; i<8; i++){
+
+				if(g_Mdata[i].refresh_data == true){
+					PROCESS_PT_SCP_MSG_GEEFRESERVERING(&SCP_Packet, g_Empty_UID, g_Mdata[i].Resvnr, 0);
+					if(SCP_Packet->Data.Message_type == msg_Reservering){
+						g_Mdata[i].Start_time = SCP_msg_Reservering__StartTime(SCP_Packet);
+						g_Mdata[i].End_time = SCP_msg_Reservering__EndTime(SCP_Packet);
+						printf ( "Reservation output%d form %s",i+1,asctime (LocalTime(&g_Mdata[i].Start_time)));
+						if(g_Mdata[i].State == ST_NO_RESERVATION){
+							g_Mdata[i].State = ST_WAIT_RESERVATION;
+						}
+					}else if(SCP_Packet->Data.Message_type == msg_Onbekend){
+						g_Mdata[i].State = ST_NO_RESERVATION;
+					}
+				}
+				if(CurTime_in_periode(g_Mdata[i].Start_time, g_Mdata[i].End_time, false) == 0){
+					if(g_Mdata[i].State == ST_WAIT_RESERVATION || ((g_Mdata[i].refresh_data == true)&&((g_Mdata[i].State == ST_OVERCURRENT)||(g_Mdata[i].State == ST_ON)||(g_Mdata[i].State == ST_NO_KWH_LEFT)))){
+						PROCESS_PT_SCP_MSG_RESERVERINGGETINFO(&SCP_Packet, g_Mdata[i].Resvnr, "MaxCurrent,MaxWattHour,CurrentWattHour",0);
+						if(SCP_Packet->Data.Message_type == msg_ReserveringSetInfo){
+							char **arr;
+							if(explode(&arr, SCP_msg_ReserveringSetInfo__var(SCP_Packet), '=') == 4){
+								g_Mdata[i].Current_max = atoi(arr[1]);
+								g_Mdata[i].Watt_H_max = atoi(arr[2]);
+								g_Mdata[i].Watt_H = atoi(arr[3]);
+							}
+							free(arr);
+
+							power_enable(g_Mdata[i].Number);
+							for(j = SCP_Devices_of_types(Devices_list, 5, 1, MULTIPD_PANEL); j > 0 ; j--){
+								BUFFER_SCP_MSG_VAR_INT_SEND(SCP_varname_array(varname_buffer,"State",g_Mdata[i].Number), g_Mdata[i].State, Devices_list[j-1]);
+							}
+						}
+					}
+				}else{
+					if((g_Mdata[i].State != ST_NO_RESERVATION)&&(g_Mdata[i].State != ST_WAIT_RESERVATION)&&(g_Mdata[i].State != ST_MANUAL)){
+						g_Mdata[i].Current_max = 0;
+						g_Mdata[i].Watt_H_max = 0;
+						power_disable(g_Mdata[i].Number);
+						g_Mdata[i].State = ST_END_RESERVATION;
+						for(j = SCP_Devices_of_types(Devices_list, 5, 1, MULTIPD_PANEL); j > 0 ; j--){
+							BUFFER_SCP_MSG_VAR_INT_SEND(SCP_varname_array(varname_buffer,"State",g_Mdata[i].Number), g_Mdata[i].State, Devices_list[j-1]);
+						}
+						g_Mdata[i].State = ST_NO_RESERVATION;
+					}
+				}
+
+				if((g_Mdata[i].Current_RMS/1000) > (g_Mdata[i].Current_max * 10)){
+					if(g_Mdata[i].State == ST_ON){
+						power_disable(g_Mdata[i].Number);
+						g_Mdata[i].State = ST_OVERCURRENT;
+
+						for(j = SCP_Devices_of_types(Devices_list, 5, 1, MULTIPD_PANEL); j > 0 ; j--){
+							BUFFER_SCP_MSG_VAR_INT_SEND(SCP_varname_array(varname_buffer,"State",g_Mdata[i].Number), g_Mdata[i].State, Devices_list[j-1]);
+						}
+					}
+				}
+
+				if((g_Mdata[i].Watt_H) > (g_Mdata[i].Watt_H_max)){
+					if(g_Mdata[i].State == ST_ON){
+						power_disable(g_Mdata[i].Number);
+						g_Mdata[i].State = ST_NO_KWH_LEFT;
+
+						for(j = SCP_Devices_of_types(Devices_list, 5, 1, MULTIPD_PANEL); j > 0 ; j--){
+							BUFFER_SCP_MSG_VAR_INT_SEND(SCP_varname_array(varname_buffer,"State",g_Mdata[i].Number), g_Mdata[i].State, Devices_list[j-1]);
+						}
+					}
+				}
+				g_Mdata[i].refresh_data = false;
+			}
+		}
+
+		PROCESS_WAIT_EVENT();
+	}
+	PROCESS_END();
+}
+
+void check_manual_input(void){
+	uint8_t i;
+	uint32_t input_port = GPIO_ReadValue(2);
+	const uint32_t pin[8] = {CON8,CON7,CON6,CON5,CON4,CON3,CON2,CON1};
+
+	for(i=0; i<8; i++){
+		if(g_Mdata[i].Number != 0){
+			if(!(input_port & pin[i])){
+				if((g_Mdata[i].State != ST_MANUAL)&&(g_Mdata[i].State != ST_ON)){
+					power_enable(g_Mdata[i].Number);
+					g_Mdata[i].refresh_data = false;
+					g_Mdata[i].State = ST_MANUAL;
+				}
+			}else if(g_Mdata[i].State == ST_MANUAL){
+				power_disable(g_Mdata[i].Number);
+				g_Mdata[i].refresh_data = true;
+				g_Mdata[i].State = ST_NO_RESERVATION;
+			}
+		}
+	}
+}

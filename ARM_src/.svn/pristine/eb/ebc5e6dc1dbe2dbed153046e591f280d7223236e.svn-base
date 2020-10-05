@@ -1,0 +1,456 @@
+#include "RTP_types.h"
+#include <Core/protocol/Checksum/crc32/crc32.h>
+#include <Core/protocol/Secure/aes/aes.h>
+#include <Core/protocol/Net/uip.h>
+#include <Core/Memory/cmem.h>
+#include <Core/Extensions/ini/minGlue-FatFs.h>
+#include <Core/Extensions/ini/minIni.h>
+#include <Core/Debug/Debug_Terminal.h>
+#include <Core/Peripherals/Net_Dev_Init.h>
+#include <Core/Timer/etimer.h>
+#include <Core/protocol/FAT/diskio.h>
+#include <Core/protocol/FAT/ff.h>
+#include <Core/Clock/rtc_cal.h>
+#include <Core/protocol/Net/Ejournal/EJournal.h>
+#include <Screen/Transaction/SCR_Transaction.h>
+
+#define RTP_BUFFER_SIZE 1024
+
+#define MSG_FLAG (1<<7)
+#define EVENT_FLAG (1<<6)
+
+extern const char inifile_device[];
+uip_ipaddr_t NFC_ipaddr;
+uint16_t NFC_port;
+
+
+uint8_t SeqNr = 0;
+bool RTP_busy = false;
+struct uip_conn * RTP_conn = NULL;
+uint8_t * RTP_buffer = NULL;
+uint8_t * RTP_event_buffer = NULL;
+RTP_packet_t event_packet = {.received_Data = NULL};
+process_event_t event_RTP;
+uint8_t * last_trans;
+uint16_t last_trans_size;
+
+/*prototypes*/
+PROCESS(RTP_process, "RTP process");
+bool RTP_Check_CRC(RTP_packet_t * packet);
+short unsigned int RTP_Send_msg(void * packet_RTP);
+void RTP_Encrypt_Body(RTP_packet_t * packet);
+bool RTP_Decrypt_Body(RTP_packet_t * packet);
+void RTP_Free_packet(RTP_packet_t * packet);
+
+const uint8_t RTP_KEY[15][16] = {
+	{0x9B,0x90,0x41,0x8C,0x02,0xA2,0x92,0x66,0x77,0xA3,0x4A,0x9E,0x28,0x93,0x22,0xC2},
+	{0x5D,0x1F,0xE8,0xF9,0x0A,0x76,0x0B,0x79,0x41,0x58,0x0B,0xD4,0xD3,0x3D,0xD1,0xD2},
+	{0x10,0x61,0x75,0xC0,0xB6,0x85,0xFE,0xF0,0x4D,0xF4,0x80,0xE0,0x72,0x19,0x14,0x13},
+	{0xE0,0x65,0x16,0x2E,0xBD,0x23,0x34,0xBD,0x61,0xFD,0x1E,0xB1,0x63,0x9E,0x92,0x36},
+	{0x33,0x98,0x64,0x44,0xB1,0xCB,0x8F,0x60,0x5D,0x89,0xEB,0xC4,0x2D,0xF9,0x8A,0x8D},
+	{0x87,0x37,0xBF,0x2C,0x04,0x63,0x97,0xCF,0x67,0x06,0xFD,0x28,0x08,0x19,0xF1,0x24},
+	{0x48,0x45,0xA0,0x87,0xA2,0x65,0xA1,0x22,0x42,0x81,0xB7,0x46,0x91,0xAC,0xF6,0xF4},
+	{0xAE,0x14,0x7C,0x5B,0x00,0xB7,0x9A,0x0A,0xC2,0x5D,0xBA,0xCA,0xAB,0x59,0x05,0xD6},
+	{0x07,0x07,0x34,0x82,0xA8,0x40,0xC3,0x88,0x4F,0xA3,0xD4,0x15,0xDF,0xFC,0x5C,0x73},
+	{0x3C,0x22,0xE6,0x2E,0x3C,0x36,0xFB,0xB3,0x71,0x9F,0xE9,0x52,0x80,0x8C,0x41,0xA0},
+	{0xD5,0x3F,0x53,0x46,0x1F,0xA6,0xB1,0xA4,0xE2,0x0B,0xF7,0x25,0x1D,0x1B,0x0C,0x57},
+	{0x77,0xD4,0xE0,0xD5,0xAE,0x3E,0x68,0xD1,0x47,0xC5,0x19,0xB7,0xDB,0x9E,0x1E,0xCD},
+	{0x24,0xE8,0xF5,0xB5,0x51,0xC5,0x59,0xC7,0x50,0xC3,0x40,0xD2,0x17,0xBD,0x91,0x56},
+	{0x0E,0x7D,0x4C,0x86,0x84,0x78,0x64,0xE3,0x2B,0xAA,0x02,0xBA,0xDA,0xDD,0x66,0x6A},
+	{0x34,0x77,0x25,0x68,0xB0,0xD4,0x42,0x92,0x7C,0x7A,0x5A,0xE3,0x73,0xE9,0xF8,0xC2}
+};
+
+void RTP_init(void){
+	RTP_busy = true;
+	NFC_port = ini_getl("Paymate","port",3183,"NFC terminal port number:",inifile_device);
+	ini_getipaddr("Paymate", "IP_address", "172.16.0.211", "NFC terminal ip address:", &NFC_ipaddr, inifile_device);
+	printf("RTP: terminal ip: %d.%d.%d.%d on port %d \r\n",uip_ipaddr_to_quad(&NFC_ipaddr), NFC_port);
+	event_RTP = process_alloc_event(); //Claim a event number
+	process_start(&RTP_process,NULL);
+	last_trans = NULL;
+	return;
+}
+
+bool RTP_save_ejournal(RTP_packet_t * packet){
+	FATFS Fatfs;
+	FIL file;
+	FRESULT rc;
+	struct tm Cur_time;
+	char Filename[30];
+	UINT bw;
+
+	rtc_cal_gettime(&Cur_time);
+
+	//mount
+	rc = f_mount(&Fatfs,"SD1:",1);
+	if(rc != FR_OK){
+		printf("RTP : Can't mount sd card (%d) \r\n", rc);
+		return false;
+	}
+
+	//make dir
+	rc = f_mkdir("SD1:/EJ");
+	if(rc == FR_OK){
+		printf("RTP-journal: Create new dir SD1:/EJ/\r\n");
+	}else if(rc != FR_EXIST){
+		printf("RTP-journal: Can't create dir SD1:/EJ/ (%d)\r\n", rc);
+		return false;
+	}
+
+	//open journal
+	sprintf(Filename,"SD1:/EJ/%d%d%d%d%d%d.xml",Cur_time.tm_year -100,Cur_time.tm_mon,Cur_time.tm_mday,Cur_time.tm_hour,Cur_time.tm_min,Cur_time.tm_sec);
+	rc = f_open( &file,Filename, FA_CREATE_ALWAYS | FA_WRITE);
+	if(rc != FR_OK)
+	{
+		printf("RTP-journal: Can't create e-journal file %s (%d) \r\n",Filename ,rc);
+		return false;
+	}
+
+	//write journal
+	rc= f_puts("<output outdevicetarget=\"Payter\">\r\n<BER-TLV>", &file);
+	rc= f_write (&file, packet->received_Data, packet->received_frame.Len, &bw);
+	rc= f_puts("</BER-TLV>\r\n</output>", &file);
+	if(bw != packet->received_frame.Len){
+		printf("RTP-journal: writing journal failed.\r\n",Filename ,rc);
+		return false;
+	}
+
+	//close journal
+	rc = f_close(&file);
+	printf("RTP-journal:Ejournal saved\r\n");
+	//unmount
+	rc = f_mount(&Fatfs,"SD1",0);
+	//process_start(&EJournal_process,NULL);
+	return true;
+}
+
+void RTP_execute_event(RTP_packet_t * packet){
+	switch(packet->received_frame.CmdID){
+	case EMV_TRANSACTION:
+		if(packet->status == S_NO_TAG || packet->status == S_CANCELED){
+			break;
+		}
+		RTP_save_ejournal(packet);
+
+		if(last_trans != NULL){
+			cmem_free(last_trans);
+			last_trans = NULL;
+		}
+
+		last_trans = cmem_malloc(packet->received_frame.Len+1);
+		memmove(last_trans+1, packet->received_Data, packet->received_frame.Len);
+		last_trans_size = packet->received_frame.Len;
+		break;
+	default:
+		break;
+	}
+}
+
+static PT_THREAD(handle_RTP_event(RTP_packet_t * packet)){
+	uint32_t len;
+	PSOCK_BEGIN(&packet->ps);
+	PSOCK_READBUF(&packet->ps);
+	len = PSOCK_DATALEN(&packet->ps);
+	printf("payter: event len %d \r\n",len);
+	packet->received_frame = *((RTP_frame_t *)RTP_event_buffer);
+	packet->received_Data = (RTP_event_buffer + sizeof(RTP_frame_t));
+	RTP_Decrypt_Body(packet);
+	cmem_free(RTP_event_buffer);
+	if(RTP_Check_CRC(packet)){
+		//get response status
+		packet->status = packet->received_Data[0];
+		packet->received_Data++;
+		packet->received_frame.Len--;
+		process_post(PROCESS_BROADCAST,event_RTP,packet);
+		RTP_execute_event(packet);
+		printf("RTP: New event msg 0x%x state %d\r\n",packet->received_frame.CmdID,packet->status);
+	}else{
+		packet->status = S_CRC;
+		printf("RTP: crc error\r\n");
+	}
+	PSOCK_END(&packet->ps);
+}
+
+PROCESS_THREAD(RTP_process, ev, data){
+
+	PROCESS_BEGIN();
+	while(ev != PROCESS_EVENT_EXIT){
+	    while(1){
+	    	if(Net_settings.setup_done == true){
+	    		break;
+	    	}
+	    	process_add_poll_event(PROCESS_CURRENT());
+	    	PROCESS_YIELD();
+	    }
+
+		RTP_conn = tcp_connect(&NFC_ipaddr, UIP_HTONS(NFC_port),NULL);
+		if(RTP_conn == NULL){
+			  log_error("RTP: no connections available\r\n");
+			  PROCESS_YIELD();
+			  continue;
+		}
+		PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+		while(!(uip_closed() || uip_aborted() || uip_timedout())){
+
+			  if(ev == tcpip_event){
+				  if(uip_connected()){
+					  printf("RTP: connected\r\n");
+					  RTP_busy = false;
+				  }
+				  if(uip_newdata() && !uip_connected()){
+					  RTP_busy = true;
+					  RTP_Free_packet(&event_packet);
+					  RTP_event_buffer = cmem_malloc(RTP_BUFFER_SIZE);
+					  PSOCK_INIT(&event_packet.ps, RTP_event_buffer, RTP_BUFFER_SIZE);
+					  while(1){
+						  if(handle_RTP_event(&event_packet) == PT_ENDED){
+							  RTP_busy = false;
+							  break;
+						  }
+					  }
+				  }
+			  }
+
+			  PROCESS_YIELD_UNTIL(ev == tcpip_event);
+		}
+		if(uip_closed()){
+			printf("RTP: connection closed\r\n");
+		}else if(uip_aborted()){
+			printf("RTP: connection aborted\r\n");
+		}else if(uip_timedout()){
+			printf("RTP: connection timeout\r\n");
+		}
+	}
+	PROCESS_END();
+}
+
+static PT_THREAD(handle_RTP_connection(RTP_packet_t * packet)){
+	PSOCK_BEGIN(&packet->ps);
+	packet->frame.SeqNr = (SeqNr++);
+	PSOCK_GENERATOR_SEND(&packet->ps,RTP_Send_msg,(void *)packet);
+	cmem_free(packet->Data);
+	PSOCK_READBUF(&packet->ps);
+	PSOCK_DATALEN(&packet->ps);
+	packet->received_frame = *((RTP_frame_t *)RTP_buffer);
+	packet->received_Data = (RTP_buffer + sizeof(RTP_frame_t));
+	RTP_Decrypt_Body(packet);
+	if(RTP_Check_CRC(packet)){
+		//get response status
+		packet->status = packet->received_Data[0];
+		packet->received_Data++;
+		packet->frame.Len--;
+	}else{
+		packet->received_Data++;
+		packet->status = S_CRC;
+		printf("RTP: crc error\r\n");
+	}
+
+	PSOCK_END(&packet->ps);
+}
+
+PT_THREAD(RTP_Send_thread(RTP_packet_t * packet, process_event_t ev, process_data_t data)){
+	static struct etimer timeout;
+
+	PT_BEGIN(&packet->p);
+
+	packet->received_Data = NULL;
+
+	if((RTP_conn->tcpstateflags <= UIP_SYN_SENT)||(RTP_conn == NULL)){
+		printf("RTP: no active Connection\r\n");
+		packet->status = S_CONN_ERROR;
+	}
+
+	if(packet->status != S_NOK){
+		PT_EXIT(&packet->p);
+	}
+
+	//check if connection is busy
+	etimer_set(&timeout, CLOCK_SECOND * 10);
+	if(RTP_busy == true){
+		printf("RTP: Connection busy\r\n");
+		do{
+			if(etimer_expired(&timeout)){
+				packet->status = S_TIMEOUT;
+				goto change_process;
+			}
+			process_add_poll_event(PROCESS_CURRENT());
+			PT_YIELD(&packet->p);
+		}while(RTP_busy == true);
+	}
+	RTP_busy = true;
+	//attach connection to this process
+	tcp_markconn(RTP_conn,NULL);
+	uip_poll_conn(RTP_conn);
+	//create buffer
+	RTP_buffer = cmem_malloc(RTP_BUFFER_SIZE);
+	PSOCK_INIT(&packet->ps, RTP_buffer, RTP_BUFFER_SIZE);
+	//wait for poll
+	PT_YIELD_UNTIL(&packet->p,(ev == tcpip_event));
+	etimer_set(&timeout, CLOCK_SECOND * 10);
+	while(!(uip_closed() || uip_aborted() || uip_timedout())){
+		if(ev == tcpip_event){
+			if(handle_RTP_connection(packet) == PT_ENDED){
+				goto change_process;
+			}
+
+			if(etimer_expired(&timeout)){
+				packet->status = S_TIMEOUT;
+				goto change_process;
+			}
+		}
+		PT_YIELD_UNTIL(&packet->p,(ev == tcpip_event));
+	}
+	//restart connection
+	process_exit(&RTP_process);
+	process_start(&RTP_process,NULL);
+
+	//give connection back to RTP process
+	change_process:
+	PROCESS_CONTEXT_BEGIN(&RTP_process);
+	tcp_markconn(RTP_conn,NULL);
+	PROCESS_CONTEXT_END(&RTP_process);
+	cmem_free(RTP_buffer);
+
+	//release connection
+	RTP_busy = false;
+	PT_END(&packet->p);
+}
+
+bool RTP_Check_CRC(RTP_packet_t * packet){
+	uint32_t CRC, calc_CRC;
+	char crc_in[1024];
+
+	CRC = packet->received_frame.CRC32;
+	packet->received_frame.CRC32 = 0xFFFFFFFF;
+	memmove(crc_in, &packet->received_frame, sizeof(RTP_frame_t));
+	memmove(crc_in + sizeof(RTP_frame_t), packet->received_Data, packet->received_frame.Len);
+	calc_CRC = ~crc32 (crc_in, sizeof(RTP_frame_t) + packet->received_frame.Len);
+	packet->received_frame.CRC32 = CRC;
+
+	return (CRC == calc_CRC);
+}
+
+
+
+void RTP_CRC(RTP_packet_t * packet){
+	char crc_in[1024];
+	uint32_t crc;
+	packet->frame.CRC32 = 0xFFFFFFFF;
+	memmove(crc_in, &packet->frame, sizeof(RTP_frame_t));
+	memmove(crc_in + sizeof(RTP_frame_t), packet->Data, packet->frame.Len);
+	crc = crc32 (crc_in, sizeof(RTP_frame_t) + packet->frame.Len);
+	packet->frame.CRC32 = ~crc;
+	return;
+}
+
+void RTP_Encrypt_Body(RTP_packet_t * packet){
+	uint8_t i;
+	uint8_t data_len;
+	uint8_t * data_in;
+	uint8_t * data_out;
+	uint8_t blocks;
+	uint8_t PKCS7;
+	uint8_t key_nr;
+	unsigned char ivec[AES_BLOCK_SIZE];
+	AES_KEY RTP_AES_KEY;
+
+
+	//get AES encryption key
+	key_nr = (packet->frame.Opt & 0x0F);
+	if(key_nr == 0x0F){return;}//no encryption used
+
+	data_len = packet->frame.Len;
+	blocks = (packet->frame.Len / AES_BLOCK_SIZE)+1;
+
+	PKCS7 = AES_BLOCK_SIZE - (packet->frame.Len % AES_BLOCK_SIZE);
+
+	if(PKCS7 == 0x00){
+		PKCS7 = 0x10;
+	}
+
+	//malloc AES buffers
+	data_in = malloc(blocks * AES_BLOCK_SIZE);
+	data_out = cmem_malloc(blocks * AES_BLOCK_SIZE);
+
+	//fill place witch PKCS7 Padding
+	memset(data_in,PKCS7,blocks * AES_BLOCK_SIZE);
+	memmove(data_in, packet->Data, packet->frame.Len);
+	//update frame settings
+	packet->frame.Len = blocks * AES_BLOCK_SIZE;
+
+	//The initial vector used is a concatenation of 2 times the first 8 bytes of the frame header with the length field set to 0xFF, 0xFF.
+	memset(ivec,0xFF,AES_BLOCK_SIZE);
+	memmove(ivec,(char *)&packet->frame, 6);
+	memmove(ivec + 8,ivec, 6);
+
+	//AES encryption
+	AES_set_encrypt_key((unsigned char *)RTP_KEY[key_nr],128,&RTP_AES_KEY);
+	for(i = 0; i < blocks; i++){
+		AES_cbc_encrypt((unsigned char *)data_in + (i*AES_BLOCK_SIZE), (unsigned char *)data_out + (i*AES_BLOCK_SIZE), AES_BLOCK_SIZE, &RTP_AES_KEY, ivec, AES_ENCRYPT);
+	}
+	if(data_len > 0){
+		cmem_free(packet->Data);
+	}
+	free(data_in);
+	packet->Data = data_out;
+	return;
+}
+
+bool RTP_Decrypt_Body(RTP_packet_t * packet){
+	uint8_t i;
+	uint8_t * data_out;
+	uint8_t blocks;
+	uint8_t key_nr;
+	unsigned char ivec[AES_BLOCK_SIZE];
+	AES_KEY RTP_AES_KEY;
+
+
+	//get AES encryption key
+	key_nr = (packet->received_frame.Opt & 0x0F);
+	if(key_nr == 0x0F){//no encryption used
+		data_out = cmem_malloc(packet->frame.Len);
+		memmove(data_out,packet->received_Data,packet->frame.Len);
+		packet->received_Data = data_out;
+		return false;
+	}
+
+	blocks = ((packet->received_frame.Len) / AES_BLOCK_SIZE);
+
+	//The initial vector used is a concatenation of 2 times the first 8 bytes of the frame header with the length field set to 0xFF, 0xFF.
+	memset(ivec,0xFF,AES_BLOCK_SIZE);
+	memmove(ivec,(char *)&packet->received_frame, 6);
+	memmove(ivec + 8,ivec, 6);
+
+	//malloc AES buffers
+	data_out = cmem_malloc(blocks * AES_BLOCK_SIZE);
+
+	//AES decryption
+	AES_set_decrypt_key((unsigned char *)RTP_KEY[key_nr],128,&RTP_AES_KEY);
+	for(i = 0; i < blocks; i++){
+		AES_cbc_encrypt((unsigned char *)packet->received_Data + (i*AES_BLOCK_SIZE), (unsigned char *)data_out + (i*AES_BLOCK_SIZE), AES_BLOCK_SIZE, &RTP_AES_KEY, ivec, AES_DECRYPT);
+	}
+
+	//update frame settings
+	packet->received_frame.Len -= data_out[packet->received_frame.Len-1];
+
+	packet->received_Data = data_out;
+	return true;
+}
+
+short unsigned int RTP_Send_msg(void * packet_RTP){
+	RTP_packet_t * packet = (RTP_packet_t *)packet_RTP;
+	RTP_CRC(packet);
+	printf("PTR: Send msg  0x%x \r\n",packet->frame.CmdID);
+	RTP_Encrypt_Body(packet);
+	memmove(uip_appdata,(char *)&packet->frame,sizeof(RTP_frame_t));
+	memmove(uip_appdata + sizeof(RTP_frame_t),packet->Data,packet->frame.Len);
+	return (sizeof(RTP_frame_t)+packet->frame.Len);
+}
+
+void RTP_Free_packet(RTP_packet_t * packet){
+	if(packet->received_Data != NULL){
+		cmem_free(packet->received_Data-1);
+		packet->received_Data = NULL;
+	}
+	return;
+}

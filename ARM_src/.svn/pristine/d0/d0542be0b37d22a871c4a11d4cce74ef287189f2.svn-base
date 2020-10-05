@@ -1,0 +1,186 @@
+#include <config.h>
+#ifdef MENU_MODULE
+
+#ifndef __SCR__MENU_H__
+#define __SCR__MENU_H__
+
+	#include "SCR_Menu_handler.h"
+	#include "Menu_handler/SCR_Menu_handler_include.h"
+	#include "SCR_Menu_draw.h"
+	#include <Screen/SCR_Text.h>
+
+	#include <stdint.h>
+	#include <stdbool.h>
+	#include <stdlib.h>
+	#include <stdio.h>
+	#include <string.h>
+
+	/*
+	 * @brief free menu
+	 */
+	void Release_menu(void);
+
+	///////////////////////////////////////////////////////Menu API functions//////////////////////////////////////////
+
+	/*
+	 * @brief set current authorization level
+	 * @param auth_lev new authorization level
+	 */
+	void menu_set_authorization_level(uint8_t auth_lev);
+
+	/*
+	 * @brief get the current authorization level
+	 */
+	uint8_t menu_get_authorization_level(void);
+
+	/*
+	 * @brief Set the service password.
+	 * @param user_code service password, 0 for disabling custom service code
+	 * @return void
+	 */
+	void menu_set_service_code(uint32_t user_code);
+
+	/*
+	 * @brief Set the admin password.
+	 * @param admin_code admin password, 0 for disabling custom admin code
+	 * @return void
+	 */
+	void menu_set_admin_code(uint32_t admin_code);
+
+
+	/*
+	 * @brief Create new menu
+	 * @param Menu_Name The header text of the menu
+	 * @param Prev_Menu pointer to the previous menu. When this is the first menu add NULL
+	 * @return pointer to the created menu
+	 */
+	struct Menu_t * menu_new_menu(F_TEXT(Menu_Name), struct Menu_item_t * Prev_Menu);
+
+	/*
+	 * @brief Connect a function to a menu, that will be executed when entering or leaving menu
+	 * @param Menu pointer to menu
+	 * @param Handler Pointer to function
+	 * @return pointer to created settings
+	 */
+	struct menu_settings_t * menu_set_menu_function(struct Menu_t * Menu, void (*Handler)(menu_handler_t event));
+
+	/*
+	 * @brief set authorization level of menu
+	 * @param Menu pointer to menu
+	 * @param auth_lev authorization level
+	 * AUTH_NO | AUTH_ADMIN | AUTH_SERVICE | AUTH_SERVICE | AUTH_MANUFACTURE | AUTH_DEBUG
+	 * @return pointer to created settings
+	 */
+	struct menu_settings_t * menu_set_menu_auth(struct Menu_t * Menu, uint8_t auth_lev);
+
+	/*
+	 * @brief set message when exit menu
+	 * @param Menu pointer to menu
+	 * @param message pointer to text message
+	 * @return pointer to created settings
+	 */
+	struct menu_settings_t * menu_set_exit_message(struct Menu_t * Menu, F_TEXT(message));
+
+	/*
+	 * @brief set menu number
+	 * @param Menu pointer to menu
+	 * @param menu nummer, 0 is off
+	 * @return pointer to created settings
+	 */
+	struct menu_settings_t * menu_set_menu_nr(struct Menu_t * Menu, uint8_t Menu_nr);
+
+	/*
+	 * @brief add menu item
+	 * @param Menu pointer to menu. create menu with menu_new_menu() function
+	 * @param Item_Name text of menu selection
+	 * @return pointer to created item
+	 */
+	struct Menu_item_t * menu_add_menu_item(struct Menu_t * Menu, F_TEXT(Item_Name),...);
+
+	/*
+	 * @brief Create integer selection menu
+	 * @param Menu_Name The header text of the menu
+	 * @param type Name of type for instance "V" "%"
+	 * @param min minimum value of selection
+	 * @param max maximum value of selection
+	 * @param decimals point position
+	 * @param variable pointer to variable to change
+	 * @param Prev_Menu pointer to the previous menu.
+	 * @return pointer to the created menu
+	 */
+	struct Menu_t * menu_new_int_menu(F_TEXT(Menu_Name), F_TEXT(type), int32_t min, int32_t max, uint8_t decimals, void * Variable, uint8_t Varsize, struct Menu_item_t * Prev_Menu);
+
+	/*
+	 * @brief Create enum selection menu
+	 * @param Menu_Name The header text of the menu
+	 * @param variable pointer to variable to change
+	 * @param Prev_Menu pointer to the previous menu.
+	 * @return pointer to the created menu
+	 */
+	struct Menu_t * menu_new_enum_menu(F_TEXT(Menu_Name), void * Variable, uint8_t Varsize, struct Menu_item_t * Prev_Menu);
+
+	/*
+	 * @brief add enum item to enum menu
+	 * @param Menu pointer to enum menu
+	 * @param Enum_Name text to display when selected
+	 * @param Value the value when selected.
+	 * @return pointer to the created enum item
+	 */
+	struct Menu_enum_t * menu_add_enum_item(struct Menu_t * Menu, F_TEXT(Enum_Name), int32_t Value);
+
+	/*
+	 * @brief Create time selection menu
+	 * @param Menu_Name The header text of the menu
+	 * @param variable pointer to variable to change
+	 * @param Prev_Menu pointer to the previous menu.
+	 * @return pointer to the created menu
+	 */
+	struct Menu_t * menu_new_time_menu(F_TEXT(Menu_Name), struct tm * Variable, struct Menu_item_t * Prev_Menu);
+
+	/*
+	 * @brief Create text menu
+	 * @param Menu_Name The header text of the menu
+	 * @param Prev_Menu pointer to the previous menu.
+	 * @return pointer to the created menu
+	 */
+	struct Menu_t * menu_new_text_menu(F_TEXT(Menu_Name), struct Menu_item_t * Prev_Menu);
+
+	/*
+	 * @brief add static text to text menu
+	 * @param Menu pointer to menu
+	 * @param text text to aff
+	 * @return pointer to text item
+	 */
+	struct Menu_text_t * menu_add_text_item(struct Menu_t * Menu, F_TEXT(text));
+
+	/*
+	 * @brief add custom menu
+	 * @param Menu_Name The header text of the menu (optional)
+	 * @param Menu_handler thread for handling custom menu events
+	 * @param Menu_draw function for drawing the menu
+	 * @param Prev_Menu pointer to the previous menu.
+	 * @return pointer to the created menu
+	 */
+	struct Menu_t * menu_new_custom_menu(F_TEXT(Menu_Name),	PT_THREAD((* Menu_handler)(process_event_t ev, process_data_t data)), void (*Menu_draw)(bool enter_menu), struct Menu_item_t * Prev_Menu);
+
+	/*
+	 * @brief save setting to ini file
+	 * @param Menu pointer to menu
+	 * @param Section ini section
+	 * @param Key ini key
+	 * @param Key ini filename
+	 */
+	void menu_add_ini_link(struct Menu_t * Menu, const char *Section, const char *Key, const char *Filename);
+
+	/*
+	 * @brief add question menu
+	 * @param Menu_Name The header text of the menu
+	 * @param question the question text
+	 * @param variable pointer to variable to change
+	 * @param Prev_Menu pointer to the previous menu.
+	 */
+	struct Menu_t * menu_new_question_menu( F_TEXT(Menu_Name), F_TEXT(question), struct Menu_item_t * Prev_Menu);
+
+	char * menu_malloc_string(char * format, ...);
+#endif
+#endif

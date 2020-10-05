@@ -1,0 +1,118 @@
+#ifndef __SCP_COMM_H__
+#define __SCP_COMM_H__
+
+	#include "tRFIDmsg.h"
+	#include "Group_id.h"
+	#include <stdint.h>
+	#include <stdbool.h>
+	#include <ctype.h>
+	#include <stdio.h>
+	#include <Core/Process/process.h>
+	#include <Core/protocol/Net/uip.h>
+	#include <core/Timer/timer.h>
+
+	PROCESS_NAME(SCP_process);
+	//General Status bytes DevInfo
+	//Status1
+	#define COM_LOST (1 << 8)
+
+
+	extern process_event_t event_SCP;
+	extern uint16_t SCP_msgID;
+
+	typedef enum{
+		E_NONE,
+		E_CON_ERROR,
+		E_TIMEOUT,
+		E_PARSER_ERROR,
+		E_BUFFER_FULL_ERROR
+	}SCP_error_t;
+
+	typedef struct SCP_pack_t{
+		struct SCP_pack_t * next;
+		struct process * Process;
+		uint16_t  SCP_msgID;
+		tRFIDmsg  Message_type;
+		uint8_t   UID[7];
+		int32_t   Value[2];
+		uint16_t  Answer_SCP_msgID;
+		tRFIDmsg  Answer_Message_type;
+		uint8_t   Answer_UID[7];
+		int32_t   Answer_Value[2];
+		SCP_error_t error;
+		struct timer timeout;
+		uint16_t Group_nr;
+	}SCP_pack_t;
+
+	typedef struct{
+		GroupId_t SCP_groupnr;
+		uint8_t SCP_modnr;
+		uint8_t SCP_locnr;
+		uint16_t SCP_dev_status;
+		uint16_t SCP_devID;
+		uint8_t Answer_Setting;
+	}SCP_DevInfo_t;
+
+	typedef struct{
+		tRFIDmsg  Message_type;
+		uint8_t   UID[7];
+		int32_t   Value[2];
+	}SCP_Data_t;
+
+	bool SCP_put_buffer(SCP_pack_t packet_handle, bool important);
+
+	/**
+	  * @brief Error state
+	  */
+	 SCP_error_t g_SCP_error;
+	#define SCP_Offline() (g_SCP_error != E_NONE)
+
+	/**
+	 * @brief Init server connection. Run Net_Dev_init(); before this function
+	 * @param groupnr device type
+	 * @param device_reset Reset when there is no connection
+	 * @return void
+	 */
+	 void SCP_Init(GroupId_t groupnr, bool device_reset);
+
+
+	/*
+	 * @brief set or reset device status byte. This function informs the server the device status with a definfo
+	 * @status_flags 16bit with device status flags
+	 * @Set Set bytes or reset bytes
+	 */
+	void SCP_Set_status_byte(uint16_t status_flags, bool Set);
+
+
+	#define Stand_alone_mode 0
+	#define Free_mode 5
+	#define Close_mode 6
+	#define Open_mode 7
+	/*
+	 * @brief Get the status of a setting bit retrieved from a definfo
+	 * @status_flags 16bit with device status flags
+	 * @Set Set bytes or reset bytes
+	 */
+	bool SCP_Get_setting_bit(uint8_t bit_nr);
+
+	/*
+	 * @brief return device information
+	 */
+	SCP_DevInfo_t SCP_Get_device_info(void);
+
+	/*
+	 *@brief increase message group number
+	 */
+	uint16_t SCP_start_new_group(void);
+
+	/*
+	 *@brief get current message group number
+	 */
+	uint16_t SCP_get_group(void);
+
+	/*
+	 * @brief send next message as defined in group_nr
+	 */
+	void SCP_Send_as_Group(uint16_t group_nr);
+
+#endif //__SCP_COMM_H__

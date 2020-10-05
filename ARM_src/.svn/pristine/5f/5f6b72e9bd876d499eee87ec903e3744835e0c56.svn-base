@@ -1,0 +1,191 @@
+#include "config.h"
+#ifdef PAYING_MODULE
+
+#include <Core/Extensions/ini/minIni.h>
+#include <Core/Process/process.h>
+#include <Core/Thread/pt.h>
+#include <core/Clock/Time_functions.h>
+#include <Device/I2C/BUTTONS/Buttons_3x4.h>
+#include <Device/I2C/Edip_240B/EDIP_240B_Clipboard.h>
+#include <Device/I2C/Edip_240B/EDIP_240B_Display.h>
+#include <Device/I2C/Edip_240B/EDIP_240B_Image.h>
+#include <Device/I2C/Edip_240B/EDIP_240B_Text.h>
+#include <Device/Net/CCV/CCV.h>
+#include <Device/Net/CCV/CCV_global.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <Screen/Transaction/SCR_Transaction.h>
+#include <Screen/Transaction/SCR_Transaction_ATM.h>
+#include <Screen/Transaction/SCR_Transaction_statistics.h>
+#include <Screen/Transaction/SCR_Transaction_Receipt.h>
+#include <Screen/SCR_Text.h>
+#include <Screen/SCR_Init.h>
+#include <Screen/SCR_Message.h>
+
+
+struct pt ATM_pt;
+
+void SCR_See_ATM(void);
+void SCR_receipt_ATM(void);
+void SCR_Present_cardtypes(void);
+bool Trans_state_change(Transaction_state_t state) __attribute__((weak));
+
+
+PT_THREAD(ATM_thread(Transaction_info_t * trans, process_event_t ev, process_data_t data)){
+	PT_BEGIN(&ATM_pt);
+
+	CCV_CardPayment(Transaction_Delivery_box,trans->print_receipt);
+	if(Trans_state_change){
+		Trans_state_change(STATE_ATM);
+	}
+	SCR_See_ATM();
+	Button3x4_activate(false);
+	while(1){
+		//enable to create a abort button
+		/*if(ev == event_Button3x4_pressed){
+			uint8_t key = *((uint8_t *)data);
+			if(key == C_RETURN){
+				CCV_AbortRequest();
+			}
+		}*/
+		//CCV state change
+		if(ev == event_CCV){
+			CCV_OverallResult_t payment_result = *((CCV_OverallResult_t *) data);
+
+			if(payment_result == R_UNKNOWN){
+				printf("Error: CCV OverallResult==R_UNKNOWN (Normal this won't happen)\r\n");
+			}else if(payment_result == R_SUCCESS){
+				PT_EXIT(&ATM_pt);
+			}else if((payment_result == R_ABORTED)||
+					(payment_result == R_FAILURE)||
+					(payment_result == R_CONNECTION_ABORTED)||
+					(payment_result == R_CCV_CONNECTION_ERROR)||
+					(payment_result == R_TIMEDOUT)
+					){
+				printf("CCV payment aborted %d\r\n",payment_result);
+				trans->payment_success = false;
+				PT_MESSAGE_SCREEN(&ATM_pt,GET_TEXT(S_Payment_Aborted));
+				print_datetime();
+				PT_EXIT(&ATM_pt);
+			}else if(payment_result == R_PRINTER_LOW){
+				printf("CCV paper low\r\n");
+				trans->payment_success = false;
+				PT_MESSAGE_SCREEN(&ATM_pt,GET_TEXT(S_Receipt_paper_empty));
+				PT_MESSAGE_SCREEN(&ATM_pt,GET_TEXT(S_Payment_Aborted));
+				print_datetime();
+				PT_EXIT(&ATM_pt);
+			}else if((payment_result == R_DEVICEUNAVAILABLE)||
+					(payment_result == R_FORMATERROR)||
+					(payment_result == R_PARSINGERROR)||
+					(payment_result == R_VALIDATIONERROR)||
+					(payment_result == R_MISSINGMANDATORYDATA)
+					){
+				printf("CCV: failure: %d\r\n",payment_result);
+				trans->payment_success = false;
+				PT_MESSAGE_SCREEN(&ATM_pt,GET_TEXT(S_Payment_Aborted));
+				print_datetime();
+				PT_EXIT(&ATM_pt);
+			}else if(payment_result == R_PRINTLASTTICKET){
+				printf("CCV: reprint last ticket\r\n");
+				trans->payment_success = false;
+				PT_MESSAGE_SCREEN(&ATM_pt,GET_TEXT(S_Payment_Aborted));
+				PT_MESSAGE_SCREEN(&ATM_pt,GET_TEXT(S_Please_warn_an_employee));
+				print_datetime();
+				PT_EXIT(&ATM_pt);
+			}else if(payment_result == R_STATE_PRINTER){
+				if(Trans_state_change){
+					Trans_state_change(STATE_PRINTING);
+				}
+				SCR_receipt_ATM();
+			}else if(payment_result == R_STATE_DELIVERYBOX){
+				Button3x4_activate(false);
+			}
+		}
+		PT_YIELD(&ATM_pt);
+	}
+	PT_END(&ATM_pt);
+}
+
+void SCR_See_ATM(void){
+	Point_t point = {.x=120,.y=10};
+	Please_wait_screen(false);
+	switch(g_screen_type){
+	case SCR_EDIP:
+		Edip_Clear_Display();
+		SCR_Present_cardtypes();
+		Edip_Set_Font(&H1Font);
+		Edip_Draw_String(point,GET_TEXT(S_See_instructions_on_ATM));
+		break;
+	case SCR_PC:
+		printf("SCR_PC: %s\r\n",GET_TEXT(S_See_instructions_on_ATM));
+		break;
+	default:
+		break;
+	}
+	return;
+}
+
+void SCR_receipt_ATM(void){
+	Point_t point = {.x=120,.y=10};
+	Please_wait_screen(false);
+	switch(g_screen_type){
+	case SCR_EDIP:
+		Edip_Clear_Display();
+		SCR_Present_cardtypes();
+		Edip_Set_Font(&H1Font);
+		Edip_Draw_String(point,GET_TEXT(S_Printing_receipt));
+		break;
+	case SCR_PC:
+		printf("SCR_PC: %s\r\n",GET_TEXT(S_Printing_receipt));
+		break;
+	default:
+		break;
+	}
+	return;
+}
+
+void SCR_Present_cardtypes(void){
+	static bool background_saved = false;
+	Point_t point = {.x=0,.y=102};
+	Point_t p1 = {.x=0,.y=102};
+	Point_t p2 = {.x=240,.y=128};
+
+	CCV_CardBrand_t CardBrand = CCV_Get_CardBrand();
+	switch(g_screen_type){
+	case SCR_EDIP:
+		if(background_saved == false){
+			if(CardBrand.AMEX == true){
+				Edip_Load_extern_Image(point,"SD1:/IMAGE/CARD/AMEX.bmp");
+			}
+			if(CardBrand.DC == true){
+				point.x += 40;
+				Edip_Load_extern_Image(point,"SD1:/IMAGE/CARD/DC.bmp");
+			}
+			if(CardBrand.ECMC == true){
+				point.x += 40;
+				Edip_Load_extern_Image(point,"SD1:/IMAGE/CARD/ECMC.bmp");
+			}
+			if(CardBrand.JCB == true){
+				point.x += 40;
+				Edip_Load_extern_Image(point,"SD1:/IMAGE/CARD/JCB.bmp");
+			}
+			if(CardBrand.MAES == true){
+				point.x += 40;
+				Edip_Load_extern_Image(point,"SD1:/IMAGE/CARD/MAES.bmp");
+			}
+			if(CardBrand.VISA == true){
+				point.x += 40;
+				Edip_Load_extern_Image(point,"SD1:/IMAGE/CARD/VISA.bmp");
+			}
+			Edip_Area_to_Clipboard(p1,p2);
+			background_saved = true;
+		}else{
+			Edip_Restore_from_Clipboard();
+		}
+		break;
+	default:
+		break;
+	}
+	return;
+}
+#endif

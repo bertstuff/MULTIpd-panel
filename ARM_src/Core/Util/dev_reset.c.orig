@@ -1,0 +1,27 @@
+#include "dev_reset.h"
+#include <LPC17xx.h>
+#include "lpc17xx_wdt.h"
+
+bool Save_reset_enabeld = false;
+
+
+void Hard_reset(void){
+	WDT_Init (WDT_CLKSRC_IRC, WDT_MODE_RESET);
+	WDT_Start(10);
+	printf("Device restart\r\n");
+	while(1){
+		printf(".");
+	}
+	return;
+}
+
+void Save_reset(void){
+	Save_reset_enabeld = true;
+}
+
+void Save_reset_poll(void){
+	if(Save_reset_enabeld == true){
+		Hard_reset();
+		return true;
+	}
+}

@@ -1,0 +1,28 @@
+#ifndef __SCR_INIT_H__
+#define __SCR_INIT_H__
+	#include <Screen/SCR_Text.h>
+	#include <Device/I2C/Edip_240B/EDIP_240B.h>
+	#include <Device/Common/LCD_16x2/LCD_16x2.h>
+	#include <Core/Process/process.h>
+
+	#define C_EURO 128
+
+
+	extern EDIP_font_t H1Font;
+	extern EDIP_font_t StdFont;//15px
+	extern EDIP_font_t SmallFont;//10px
+	extern EDIP_font_t TinyFont;
+
+	extern struct process *screen_current;
+
+	void SCR_select(Screen_t Screen_type, uint8_t addr);
+
+	void SCR_set_busy(bool state);
+
+	bool SCR_is_busy(void);
+
+	void SCR_init(void);
+
+	void SCR_load(struct process *p);
+
+#endif //__SCR_INIT_H__

@@ -1,0 +1,366 @@
+#include "SCP_Comm.h"
+#include <Core/Memory/list.h>
+#include <Core/Memory/cmem.h>
+#include <Core/protocol/FAT/ff.h>
+#include <core/Util/array.h>
+#include <Core/Debug/Debug_Terminal.h>
+#include <Core/Debug/Hard_Fault_handler.h>
+#define PACKET_BUFFER_SIZE 8
+
+const char file_SCP_buffer[] = "SD1:/SCP_buf.buf";
+SCP_pack_t SCP_mem[PACKET_BUFFER_SIZE];
+SCP_pack_t SCP_sd_packet;
+DWORD last_file_ptr;
+LIST(SCP_buffer_list);
+uint16_t SCP_Group_ctr = 1;
+int32_t SCP_Send_as_Group_nr = -1;
+
+void SCP_packet_timeout(SCP_pack_t * packet);
+void SCP_packet_to_sd(SCP_pack_t * packet);
+SCP_pack_t * SCP_get_sd_packet(uint16_t DevID);
+void SCP_remove_sd_packet(SCP_pack_t * packet);
+
+void SCP_Buffer_init(void){
+	list_init(SCP_buffer_list);
+}
+
+
+uint16_t SCP_start_new_group(void){
+	SCP_Group_ctr++;
+	if(SCP_Group_ctr == 0){
+		SCP_Group_ctr++;
+	}
+	return SCP_Group_ctr;
+}
+
+uint16_t SCP_get_group(void){
+	return SCP_Group_ctr;
+}
+
+void SCP_Send_as_Group(uint16_t group_nr){
+	SCP_Send_as_Group_nr = group_nr;
+}
+
+bool SCP_Buffer_put(SCP_pack_t ** packet_handle, SCP_Data_t packet_data, struct process * process, bool important, uint16_t Device){
+
+	SCP_pack_t * packet;
+	uint8_t buffer_ptr = 0;
+
+	if(packet_handle == NULL){
+		packet_handle = &packet;
+	}
+
+	while(1){
+		*packet_handle = &SCP_mem[buffer_ptr];
+		if(SCP_packet_in_buffer(*packet_handle)){
+			buffer_ptr++;
+			if(buffer_ptr >= PACKET_BUFFER_SIZE){
+				printf("SCP: Buffer full\r\n");
+				buffer_ptr = 0;
+				*packet_handle = &SCP_mem[buffer_ptr];
+				SCP_packet_timeout(*packet_handle);
+			}
+		}else{
+			break;
+		}
+	}
+
+    (*packet_handle)->next = NULL;
+    (*packet_handle)->Data = packet_data;
+	(*packet_handle)->Process = process;
+	(*packet_handle)->SCP_msgID = SCP_msgID;
+	(*packet_handle)->Dest_device = Device;
+	(*packet_handle)->send = false;
+	(*packet_handle)->incomming = false;
+	(*packet_handle)->important = important;
+	if(SCP_Send_as_Group_nr != -1){
+		(*packet_handle)->Group_nr = SCP_Send_as_Group_nr;
+		SCP_Send_as_Group_nr = -1;
+	}else{
+		(*packet_handle)->Group_nr = SCP_Group_ctr;
+	}
+
+	timer_set(&((*packet_handle)->timeout),CLOCK_SECOND * 10);
+	SCP_msgID++;
+	if(SCP_msgID > 0xFF){
+		SCP_msgID = 0;
+	}
+
+	if(important == false){
+		list_add(SCP_buffer_list, *packet_handle);
+	}else{
+		list_push(SCP_buffer_list, *packet_handle);
+	}
+	process_post(&SCP_process,event_SCP,*packet_handle);
+	return true;
+}
+
+bool SCP_Buffer_put_incomming(SCP_pack_t ** packet_handle, SCP_pack_t packet_data){
+
+	uint8_t buffer_ptr = 0;
+
+	while(1){
+		*packet_handle = &SCP_mem[buffer_ptr];
+		if(SCP_packet_in_buffer(*packet_handle)){
+			buffer_ptr++;
+			if(buffer_ptr >= PACKET_BUFFER_SIZE){
+				printf("SCP: Buffer full\r\n");
+				buffer_ptr = 0;
+				*packet_handle = &SCP_mem[buffer_ptr];
+				SCP_packet_timeout(*packet_handle);
+			}
+		}else{
+			break;
+		}
+	}
+
+    (*packet_handle)->next = NULL;
+    (*packet_handle)->Data = packet_data.Data;
+    (*packet_handle)->Process = NULL;
+    (*packet_handle)->SCP_msgID = packet_data.SCP_msgID;
+    (*packet_handle)->Dest_device = packet_data.Dest_device;
+    (*packet_handle)->send = false;
+    (*packet_handle)->incomming = true;
+	if(SCP_Send_as_Group_nr != -1){
+		(*packet_handle)->Group_nr = SCP_Send_as_Group_nr;
+		SCP_Send_as_Group_nr = -1;
+	}else{
+		(*packet_handle)->Group_nr = SCP_Group_ctr;
+	}
+
+	timer_set(&((*packet_handle)->timeout),CLOCK_SECOND * 10);
+	list_push(SCP_buffer_list, *packet_handle);
+	return true;
+}
+
+SCP_pack_t * SCP_Buffer_get(uint16_t DevID){
+	SCP_pack_t * Buffer_packet;
+
+	Buffer_packet = SCP_get_sd_packet(DevID);
+	if(Buffer_packet != NULL){
+		return Buffer_packet;
+	}
+
+	Buffer_packet = list_head(SCP_buffer_list);
+	while(Buffer_packet != NULL){
+		if((Buffer_packet->Dest_device == DevID)&&(Buffer_packet->send == false)){
+			return Buffer_packet;
+		}else{
+			Buffer_packet = list_item_next(Buffer_packet);
+		}
+	}
+	return NULL;
+}
+
+void SCP_Buffer_remove(SCP_pack_t * packet){
+	if(packet == &SCP_sd_packet){
+		SCP_remove_sd_packet(packet);
+	}else{
+		list_remove(SCP_buffer_list, packet);
+	}
+}
+
+bool SCP_packet_in_buffer(SCP_pack_t * packet){
+	return list_item_in_list(SCP_buffer_list, packet);
+}
+
+void SCP_packet_timeout(SCP_pack_t * packet){
+	SCP_Device_t * loop_device = NULL;
+	if(SCP_packet_in_buffer(packet)){
+		if(packet->Process != NULL){
+			packet->Error = E_TIMEOUT;
+			packet->Data.Message_type = msg_Error;
+			printf("SCP[%d]: Inform msg_nr %d timeout to process %s DevId %d\r\n",clock_time(),packet->SCP_msgID,packet->Process->name, packet->Dest_device);
+			process_post_synch(packet->Process, event_SCP, packet);
+		}else if(packet->important == true){
+			printf("SCP[%d]: msg_nr %d to SD-card DevId %d\r\n",clock_time(),packet->SCP_msgID, packet->Dest_device);
+			SCP_packet_to_sd(packet);
+		}
+		if(packet->Data.Text != NULL){
+			cmem_free(packet->Data.Text);
+		}
+		SCP_Buffer_remove(packet);
+
+		while(1){
+			loop_device = SCP_Loop_known_devices(loop_device);
+			if(loop_device->Cur_Packet == packet){
+				printf("SCP[%d]: socket reset DevID: %d\r\n",clock_time(),loop_device->Info.SCP_devID);
+				if(loop_device->State == DEV_CONNECTED){
+					PSOCK_INIT(&loop_device->Socket, loop_device->Buffer, SCP_BUFFER_SIZE);
+				}
+				loop_device->Cur_Packet = NULL;
+			}
+			if(loop_device == NULL){
+				break;
+			}
+		}
+	}
+}
+
+void SCP_timeout_handler(void){
+	SCP_pack_t * packet_ptr;
+	packet_ptr = list_head(SCP_buffer_list);
+	while(packet_ptr){
+		if(timer_expired(&(packet_ptr->timeout))){
+			SCP_packet_timeout(packet_ptr);
+		}
+		packet_ptr = list_item_next(packet_ptr);
+	}
+
+	if(timer_expired(&SCP_sd_packet.timeout)){
+		SCP_sd_packet.send = false;
+	}
+}
+
+void SCP_packet_to_sd(SCP_pack_t * packet){
+	char packet_buffer[100];
+
+	FIL fp;
+	FATFS Fatfs;
+	if(packet->incomming == true){
+		return;
+	}
+
+	if(f_mount(&SD_Fatfs,"SD1:",1) == FR_OK){
+		if(f_open(&fp, file_SCP_buffer, FA_OPEN_APPEND|FA_WRITE|FA_CREATE_ALWAYS) == FR_OK){
+			snprintf(packet_buffer,100,"%d %d %d %x %x %x %x %x %x %x %d %d %d %s%s%s \r\n",
+				packet->SCP_msgID,
+				packet->Dest_device,
+				packet->Data.Message_type,
+				packet->Data.UID[0],
+				packet->Data.UID[1],
+				packet->Data.UID[2],
+				packet->Data.UID[3],
+				packet->Data.UID[4],
+				packet->Data.UID[5],
+				packet->Data.UID[6],
+				packet->Data.Value[0],
+				packet->Data.Value[1],
+				packet->Group_nr,
+				(packet->Data.Text == NULL)?"":"\"",
+				(packet->Data.Text == NULL)?"":packet->Data.Text,
+				(packet->Data.Text == NULL)?"":"\""
+				);
+			printf("SCP: packet msg:%d msg_nr:%d DevID %d moved to SD\r\n",packet->Data.Message_type,packet->SCP_msgID,packet->Dest_device);
+			f_puts(packet_buffer,&fp);
+			f_close(&fp);
+		}else{
+			printf("SCP: Opening buffer file error\r\n");
+		}
+	}else{
+		printf("SCP: SD mount failure\r\n");
+	}
+}
+
+SCP_pack_t * SCP_get_sd_packet(uint16_t DevID){
+	char packet_buffer[100];
+	char * packet_pt = packet_buffer;
+	FIL fp;
+	char **arr;
+	int i;
+	char * Text_begin = NULL;
+	char * Text_end = NULL;
+	int size;
+	char *p;
+
+	if(f_mount(&SD_Fatfs,"SD1:",1) == FR_OK){
+		if(f_open(&fp, file_SCP_buffer, FA_READ|FA_OPEN_EXISTING) == FR_OK){
+
+			while(1){
+				if(f_eof(&fp)){
+					f_close(&fp);
+					return NULL;
+				}
+				packet_pt = packet_buffer;
+				last_file_ptr = f_tell(&fp);
+				f_gets(packet_buffer, sizeof(packet_buffer), &fp);
+				if(strlen(packet_buffer) < 10){
+					log_error("SCP: error in buffer file. File removed\r\n");
+					f_close(&fp);
+					f_unlink(file_SCP_buffer);
+					return NULL;
+				}
+
+				while(isspace(*packet_pt)){
+					packet_pt++;
+				} //skip leading spaces
+				explode(&arr, packet_pt,' '); //string to array
+				SCP_sd_packet.Dest_device = atoi(arr[1]);
+				if(SCP_sd_packet.Dest_device != DevID){
+					free(arr);
+					f_close(&fp);
+					continue;
+				}
+				SCP_sd_packet.SCP_msgID = atoi(arr[0]);
+				SCP_sd_packet.Data.Message_type = atoi(arr[2]);
+				for(i=0; i<7; i++){
+					SCP_sd_packet.Data.UID[i] = strtoul(arr[3+i], &p, 16);
+				}
+				SCP_sd_packet.Data.Value[0] = atoi(arr[10]);
+				SCP_sd_packet.Data.Value[1] = atoi(arr[11]);
+				SCP_sd_packet.Group_nr = atoi(arr[12]);
+
+				SCP_sd_packet.Data.Text = NULL;
+				Text_begin = strchr(packet_buffer,'\"');
+				if(Text_begin != NULL){
+					Text_end = strchr(Text_begin+1,'\"');
+					if(Text_end != NULL){
+						size = Text_end - Text_begin;
+						SCP_sd_packet.Data.Text = cmem_malloc(size);
+						memmove(SCP_sd_packet.Data.Text,Text_begin+1,size);
+						SCP_sd_packet.Data.Text[size-1] = '\0';
+					}
+				}
+				SCP_sd_packet.incomming = false;
+				SCP_sd_packet.send = false;
+				free(arr);
+				printf("SCP: packet from SD \r\n");
+				f_close(&fp);
+				return &SCP_sd_packet;
+			}
+			f_close(&fp);
+		}		
+	}else{
+		return NULL;
+	}
+	return NULL;
+}
+
+void SCP_remove_sd_packet(SCP_pack_t * packet){
+	char packet_buffer[100];
+	FIL fp;
+	uint8_t lenght_bw;
+	DWORD read_ptr;
+	DWORD write_ptr;
+
+	if(f_mount(&SD_Fatfs,"SD1:",1) == FR_OK){
+		if(f_open(&fp, file_SCP_buffer, FA_READ|FA_WRITE|FA_OPEN_EXISTING) == FR_OK){
+			write_ptr = last_file_ptr;
+			f_lseek (&fp,last_file_ptr);
+			f_gets(packet_buffer, sizeof(packet_buffer), &fp);
+			read_ptr = f_tell(&fp);
+			while(1){
+				f_lseek (&fp,read_ptr);
+				if(f_eof(&fp)){
+					f_lseek (&fp,write_ptr);
+					break;
+				}
+				f_gets(packet_buffer, sizeof(packet_buffer), &fp);
+				read_ptr = f_tell(&fp);
+				f_lseek (&fp,write_ptr);
+				f_write (&fp, packet_buffer, strlen(packet_buffer), (UINT*) &lenght_bw);
+				write_ptr = f_tell(&fp);
+			}
+			f_truncate (&fp);
+			printf("SCP: packet removed from SD \r\n");
+			f_close(&fp);
+		}
+	}else{
+		return;
+	}
+}
+
+bool SCP_packet_from_sd(SCP_pack_t * packet){
+	return(packet == &SCP_sd_packet);
+}
+

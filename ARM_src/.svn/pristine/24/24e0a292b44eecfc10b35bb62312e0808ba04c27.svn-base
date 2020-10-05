@@ -1,0 +1,22 @@
+#ifndef __SCP_DEVICE_H__
+#define __SCP_DEVICE_H__
+
+	#include "SCP_Comm.h"
+	#include <Core/protocol/Net/psock.h>
+
+	#define SCP_BUFFER_SIZE 58
+
+	void SCP_Device_init(void);
+	SCP_Device_t * SCP_create_new_device(uint8_t DevID);
+	void SCP_Device_delete(SCP_Device_t * Device);
+	SCP_Device_t * SCP_Device_connection(struct uip_conn * conn);
+	bool SCP_Device_Known(uint8_t DevID);
+	uint8_t SCP_number_of_known_devices(void);
+	void SCP_Device_Find(uint8_t DevID);
+	SCP_Device_t * SCP_Loop_known_devices(SCP_Device_t * Device);
+	SCP_Device_t * SCP_Get_Device(uint8_t DevID);
+	SCP_Device_t * SCP_Get_Device_order(uint8_t DevID, uint8_t order);
+	bool SCP_Device_Sock_Begin(SCP_Device_t * Device);
+	bool SCP_Device_Sock_End(SCP_Device_t * Device);
+
+#endif //__SCP_DEVICE_H__

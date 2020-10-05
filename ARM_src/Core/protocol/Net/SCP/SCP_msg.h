@@ -1,0 +1,1037 @@
+#ifndef __SCP_MSG_H__
+#define __SCP_MSG_H__
+
+#include <Core/protocol/Net/SCP/SCP_Comm.h>
+#include <stdint.h>
+#include <Processes/Global_UID.h>
+#include <Core/Type/type.h>
+
+/*-------------local functions---------------*/
+
+//1
+SCP_Data_t SCP_msg_Present(UID_t UID, uint8_t machine_type);
+//11 & 411
+typedef enum {
+	REASON_UPGRADE = 0,
+	REASON_ROLLBACK = 1
+}msg_Reason_t;
+
+typedef enum{
+	GATE_NORMAL,
+	GATE_PULS,
+	GATE_OPEN,
+	GATE_CLOSED
+}gate_action_t;
+
+SCP_Data_t SCP_msg_BijEuro(UID_t UID,int32_t Centen_Bij,msg_Reason_t Reason);
+//12 & 412
+SCP_Data_t SCP_msg_AfEuro(UID_t UID,int32_t Centen_af);
+//13 & 413
+SCP_Data_t SCP_msg_MeldEuro(UID_t UID);
+//17
+SCP_Data_t SCP_msg_Geefkaart(UID_t UID);
+//18 & 418
+SCP_Data_t SCP_msg_Betaald(UID_t UID, int32_t Centen);
+//25
+SCP_Data_t SCP_msg_OpenPoortOk(gate_action_t action, uint8_t status, int16_t poort);
+//26
+SCP_Data_t SCP_msg_ResetOk(void);
+//29 & 429
+SCP_Data_t SCP_msg_Language(UID_t UID, Language_t language);
+//34
+SCP_Data_t SCP_msg_Retour(int32_t centen);
+//43
+SCP_Data_t SCP_msg_Error(void);
+//61
+SCP_Data_t SCP_msg_DevInfo(SCP_DevInfo_t DevInfo);
+//63
+SCP_Data_t SCP_msg_DevInfoOk(SCP_DevInfo_t DevInfo);
+//64
+SCP_Data_t SCP_msg_CashStatus(SCP_Data_t value);
+//66
+SCP_Data_t SCP_msg_Boot(SCP_DevInfo_t DevInfo);
+//67
+SCP_Data_t SCP_msg_BootOk(SCP_DevInfo_t DevInfo);
+//71
+SCP_Data_t SCP_msg_DeurOpen(void);
+//72
+SCP_Data_t SCP_msg_DeurDicht(void);
+//77
+SCP_Data_t SCP_msg_NoodCode(bool daycode, bool noodcode);
+//99
+SCP_Data_t SCP_msg_Ok(void);
+//111
+SCP_Data_t SCP_msg_PinCode(uint8_t Code[7]);
+//112
+SCP_Data_t SCP_msg_GeefPinCode(int32_t ResvNr, uint8_t Lenght);
+//220
+SCP_Data_t SCP_msg_GeefReservering(UID_t UID, int32_t ResvNr);
+//222
+SCP_Data_t SCP_msg_ReserveringPrice(int32_t ResvNr);
+//223
+SCP_Data_t SCP_msg_ReserveringBetaald(int32_t ResvNr, int32_t Centen);
+//224
+SCP_Data_t SCP_msg_ReserveringStarted(uint16_t machine, int32_t ResvNr);
+//225 & 226
+SCP_Data_t SCP_msg_ReserveringBooked(UID_t UID, uint16_t min, uint8_t machine_type);
+//228
+SCP_Data_t SCP_msg_ReserveringMachine(uint16_t Machine);
+//230
+SCP_Data_t SCP_msg_ReserveringGetInfo(int32_t ResvNr, char * var_name);
+//231
+SCP_Data_t SCP_msg_ReserveringSetInfo(int32_t ResvNr, char * var_name);
+//301
+SCP_Data_t SCP_msg_LinkInfo(int32_t ResvNr);
+//303
+SCP_Data_t SCP_msg_RFIDLink(UID_t UID,int32_t ResvNr);
+//305
+SCP_Data_t SCP_msg_RFIDUnlink(UID_t UID);
+SCP_Data_t SCP_msg_RFIDUnlinkAll(int32_t ResvNr);
+//321
+SCP_Data_t SCP_msg_Machine_started(uint16_t machine, uint8_t machine_type);
+//322
+SCP_Data_t SCP_msg_Machine_stoped(uint16_t machine);
+//323
+SCP_Data_t SCP_msg_Machine_available(uint8_t machine_type);
+//324
+SCP_Data_t SCP_msg_Machine_present(uint8_t machine_type, uint8_t subtype, uint8_t machine_present, uint16_t price, uint16_t tick_min);
+//331
+SCP_Data_t SCP_msg_PoortOpen(UID_t UID, uint16_t poort);
+//600
+SCP_Data_t SCP_msg_Alert(uint16_t Alert,uint16_t Specify);
+//601
+SCP_Data_t SCP_msg_Printer_status(uint16_t Printer_state, uint16_t printer);
+//602
+SCP_Data_t SCP_msg_Transaction_done(int16_t multipass_payed, int16_t cash_payed, int16_t bank_payed);
+//604
+SCP_Data_t SCP_msg_Poort_status(gate_action_t action,uint8_t status, int16_t poort);
+//900
+SCP_Data_t SCP_msg_var_int_send(char * var_name,int32_t var_val);
+//901
+SCP_Data_t SCP_msg_var_int_request(char * var_name);
+
+#define PROCESS_SCP_SEND(PACK, FUNC, DEVICE)      if(SCP_Buffer_put(PACK, FUNC, PROCESS_CURRENT(), true, DEVICE)){	\
+									  	    		ev = PROCESS_EVENT_NONE;										\
+									  	    		PROCESS_WAIT_UNTIL(ev == event_SCP); 							\
+									  	    		(*(PACK)) = (SCP_pack_t *) data;								\
+									  	  	  	  }
+
+#define PT_SCP_SEND(PT, PACK, FUNC, DEVICE)   	  if(SCP_Buffer_put(PACK, FUNC, PROCESS_CURRENT(), true, DEVICE)){	\
+									  	    		ev = PROCESS_EVENT_NONE;										\
+									  	    		PT_WAIT_UNTIL(PT, ev == event_SCP); 							\
+									  	    		(*(PACK)) = (SCP_pack_t *) data;								\
+									  	  	  	  }
+
+#define BUFFER_SCP_SEND(FUNC, DEVICE)		  	  	SCP_Buffer_put(NULL, FUNC, NULL, false, DEVICE);
+#define BUFFER_SCP_SEND_IMPORTANT(FUNC, DEVICE)		SCP_Buffer_put(NULL, FUNC, NULL, true, DEVICE);
+
+
+
+
+/*-------------Global API functions---------------*/
+
+/*1-msg_Present*/
+/*401-msg_QR_present*/
+/*
+ * @brief send the UID of the presented pass
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Akkoord
+ * -msg_Blokkade
+ * -msg_NietAkkoord
+ * -msg_Error
+ * @param PASS_UID UID of pass or QR
+ */
+#define PROCESS_PT_SCP_MSG_PRESENT(PACK, PASS_UID, MACHINE_TYPE) 	PROCESS_SCP_SEND(PACK, SCP_msg_Present(PASS_UID, MACHINE_TYPE), 0)
+#define PT_SCP_MSG_PRESENT(PT, PACK, PASS_UID, MACHINE_TYPE) 		PT_SCP_SEND(PT, PACK, SCP_msg_Present(PASS_UID, MACHINE_TYPE), 0)
+#define BUFFER_SCP_MSG_PRESENT(PASS_UID, MACHINE_TYPE)				BUFFER_SCP_SEND(SCP_msg_Present(PASS_UID, MACHINE_TYPE), 0)
+
+
+/*11-msg_RFID_BijEuro*/
+/*411-msg_QR_BijEuro*/
+/*
+ * @brief increase saldo on pass
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_BijEuroOk
+ * -msg_Blokkade
+ * -msg_Error
+ * @param PASS_UID UID of pass or QR
+ * @param CENTEN_BIJ amount to increase
+ * @parma REASON reason of bij euro
+ */
+#define PROCESS_PT_SCP_MSG_BIJEURO(PACK, PASS_UID, CENTEN_BIJ, REASON) 	PROCESS_SCP_SEND(PACK, SCP_msg_BijEuro(PASS_UID, CENTEN_BIJ, REASON), 0)
+#define PT_SCP_MSG_BIJEURO(PT, PACK, PASS_UID, CENTEN_BIJ, REASON) 		PT_SCP_SEND(PT, PACK, SCP_msg_BijEuro(PASS_UID, CENTEN_BIJ, REASON), 0)
+#define BUFFER_SCP_MSG_BIJEURO(PASS_UID, CENTEN_BIJ, REASON)			BUFFER_SCP_SEND(SCP_msg_BijEuro(PASS_UID, CENTEN_BIJ, REASON), 0)
+#define BUFFER_SCP_MSG_BIJEURO_IMPORTANT(PASS_UID, CENTEN_BIJ, REASON)	BUFFER_SCP_SEND_IMPORTANT(SCP_msg_BijEuro(PASS_UID, CENTEN_BIJ, REASON), 0)
+
+/*12-msg_RFID_AfEuro*/
+/*412-msg_QR_AfEuro*/
+/*
+ * @brief decrease saldo on pass
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_AfEuroOk
+ * -msg_Blokkade
+ * -msg_Error
+ * @param PASS_UID UID of pass or QR
+ * @param CENTEN_AF amount to decrease
+ */
+#define PROCESS_PT_SCP_MSG_AFEURO(PACK, PASS_UID, CENTEN_AF) 	PROCESS_SCP_SEND(PACK, SCP_msg_AfEuro(PASS_UID, CENTEN_AF), 0)
+#define PT_SCP_MSG_AFEURO(PT, PACK, PASS_UID, CENTEN_AF) 		PT_SCP_SEND(PT, PACK, SCP_msg_AfEuro(PASS_UID, CENTEN_AF), 0)
+#define BUFFER_SCP_MSG_AFEURO(PASS_UID, CENTEN_AF)				BUFFER_SCP_SEND(SCP_msg_AfEuro(PASS_UID, CENTEN_AF), 0)
+
+/*13-msg_RFID_MeldEuro*/
+/*413-msg_QR_MeldEuro*/
+/*
+* @brief Get saldo on pass
+* @param PACK pointer to packet buffer. Returns message types:
+* -msg_HuidigEuro
+* -msg_Blokkade
+* -msg_Error
+* @param PASS_UID UID of pass or QR
+*/
+#define PROCESS_PT_SCP_MSG_MELDEURO(PACK, PASS_UID) 	PROCESS_SCP_SEND(PACK, SCP_msg_MeldEuro(PASS_UID), 0)
+#define PT_SCP_MSG_MELDEURO(PT, PACK, PASS_UID) 		PT_SCP_SEND(PT, PACK, SCP_msg_MeldEuro(PASS_UID), 0)
+#define BUFFER_SCP_MSG_MELDEURO(PASS_UID)				BUFFER_SCP_SEND(SCP_msg_MeldEuro(PASS_UID), 0)
+
+/*15-msg_OpenPoort*/
+/*
+ * @brief parse msg_OpenPoort
+ * @param Packet pointer to packet buffer
+ * @return poort to open;
+ */
+int32_t SCP_msg_OpenPoort__Poort(SCP_pack_t * Packet);
+
+/*
+ * @brief parse msg_Openpoort
+ * @param Packet pointer to packet buffer
+ * @return action (gate_action_t)
+ */
+gate_action_t SCP_msg_OpenPoort__Action(SCP_pack_t * Packet);
+
+/*17-msg_GeefKaart*/
+/*
+ * @brief ask server if a card can be dispensed
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_GeefKaart
+ * -msg_GeefKaartOk
+ * -msg_Error
+ * @param PASS_UID uid of card that will be dispensed
+ */
+#define PROCESS_PT_SCP_MSG_GEEFKAART(PACK, PASS_UID) 	PROCESS_SCP_SEND(PACK, SCP_msg_Geefkaart(PASS_UID), 0)
+#define PT_SCP_MSG_GEEFKAART(PT, PACK, PASS_UID) 		PT_SCP_SEND(PT, PACK, SCP_msg_Geefkaart(PASS_UID), 0)
+
+/*
+ * @brief parse msg_GeefKaart
+ * @param Packet pointer to packet buffer
+ * @return number of cards to eject
+ */
+uint8_t SCP_msg_GeefKaart__Cards(SCP_pack_t * Packet);
+
+/*18-msg_RFID_Betaald*/
+/*418-msg_QR_Betaald*/
+/*
+ * @brief Inform the server of a payment
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_BetaaldOk
+ * -msg_Error
+ * @param PASS_UID UID of pass or QR
+ * @param CENTEN value payed
+ */
+#define PROCESS_PT_SCP_MSG_BETAALD(PACK, PASS_UID, CENTEN) 	PROCESS_SCP_SEND(PACK, SCP_msg_Betaald(PASS_UID, CENTEN), 0)
+#define PT_SCP_MSG_BETAALD(PT, PACK, PASS_UID, CENTEN) 		PT_SCP_SEND(PT, PACK, SCP_msg_Betaald(PASS_UID, CENTEN), 0)
+#define BUFFER_SCP_MSG_BETAALD(PASS_UID, CENTEN)			BUFFER_SCP_SEND(SCP_msg_Betaald(PASS_UID, CENTEN), 0)
+
+/*21-msg_RFID_BijEuroOk*/
+/*421-msg_QR_BijEuroOk*/
+/*
+ * @brief parse msg_BijEuroOk
+ * @param Packet pointer to packet buffer
+ * @return current value on pass
+ */
+int32_t SCP_msg_BijEuroOk__Centen(SCP_pack_t * Packet);
+
+/*22-msg_RFID_AfEuroOk*/
+/*422-msg_QR_AfEuroOk*/
+/*
+ * @brief parse msg_AfEuroOk
+ * @param Packet pointer to packet buffer
+ * @return current value on pass
+ */
+int32_t SCP_msg_AfEuroOk__Centen(SCP_pack_t * Packet);
+
+/*23-msg_RFID_HuidigEuro*/
+/*423-msg_QR_HuidigEuro*/
+
+/*
+ * @brief parse msg_RFID_HuidigEuro
+ * @param Packet pointer to packet buffer
+ * @return Type of user
+ */
+uint8_t SCP_msg_HuidigEuro__User(SCP_pack_t * Packet);
+
+/*
+ * @brief parse msg_RFID_HuidigEuro
+ * @param Packet pointer to packet buffer
+ * @return current value on pass
+ */
+int32_t SCP_msg_HuidigEuro__Centen(SCP_pack_t * Packet);
+
+/*29-msg_RFID_Language*/
+/*429-msg_QR_Language*/
+/*
+ * @brief set language of pass
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_ok
+ * -msg_Error
+ * @param PASS_UID UID of pass or QR
+ * @param CENTEN value payed
+ */
+#define PROCESS_PT_SCP_MSG_LANGUAGE(PACK, PASS_UID, LANGUAGE) 	PROCESS_SCP_SEND(PACK, SCP_msg_Language(PASS_UID, LANGUAGE), 0)
+#define PT_SCP_MSG_LANGUAGE(PT, PACK, PASS_UID, LANGUAGE) 		PT_SCP_SEND(PT, PACK, SCP_msg_Language(PASS_UID, LANGUAGE), 0)
+#define BUFFER_SCP_MSG_LANGUAGE(PASS_UID, LANGUAGE)				BUFFER_SCP_SEND(SCP_msg_Language(PASS_UID, LANGUAGE), 0)
+
+/*33-msg_RFID_Betaal*/
+/*433-msg_QR_Betaal*/
+/*
+ * @brief parse msg_Betaal
+ * @param Packet pointer to packet buffer
+ * @return current value to pay
+ */
+int32_t SCP_msg_Betaal__Centen(SCP_pack_t * Packet);
+
+/*34-msg_Retour*/
+/*
+ * @brief send Retour message to a other device
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_ok
+ * -msg_Error
+ * @param CENTEN value to retour
+ * @param DEVICE DevID of receiver
+ */
+#define PROCESS_PT_SCP_MSG_RETOUR(PACK, CENTEN, DEVICE) 	PROCESS_SCP_SEND(PACK, SCP_msg_Retour(CENTEN), DEVICE)
+#define PT_SCP_MSG_RETOUR(PT, PACK, CENTEN, DEVICE) 		PT_SCP_SEND(PT, PACK, SCP_msg_Retour(CENTEN), DEVICE)
+#define BUFFER_SCP_MSG_RETOUR(CENTEN, DEVICE)				BUFFER_SCP_SEND(SCP_msg_Retour(CENTEN), DEVICE)
+#define BUFFER_SCP_MSG_RETOUR_IMPORTANT(CENTEN, DEVICE)		BUFFER_SCP_SEND_IMPORTANT(SCP_msg_Retour(CENTEN), DEVICE)
+
+/*42-msg_Akkoord*/
+/*
+ * @brief parse poort data from msg_Akkoord.
+ * @param Packet pointer to packet buffer
+ * @return poort variable. when bit is '1' open poort bitwise
+ */
+int32_t SCP_msg_Akkoord__Poort(SCP_pack_t * Packet);
+
+/*
+ * @brief parse trash from msg_Akkoord
+ * @param Packet pointer to packet buffer
+ * @return true when trash need
+ */
+bool SCP_msg_Akkoord__Trash(SCP_pack_t * Packet);
+
+/*
+ * @brief parse reservation number from msg_Akkoord. 0 = no reservation
+ * @param Packet pointer to packet buffer
+ * @return reservation number
+ */
+int32_t SCP_msg_Akkoord__ResvNr(SCP_pack_t * Packet);
+
+/*
+ * @brief get auth level. hen VarType == USER_TYPE
+ * @param Packet pointer to packet buffer
+ * @return user authorization level
+ */
+uint8_t SCP_msg_Akkoord__User(SCP_pack_t * Packet);
+
+/*43-msg_Error*/
+/*
+*@brief create response message
+*@param Packet pointer to packet buffer
+*/
+SCP_Data_t SCP_msg_Error(void);
+
+/*46-msg_NietAkkoord*/
+/*
+ * @brief get auth level.
+ * @param Packet pointer to packet buffer
+ * @return user authorization level
+ */
+uint8_t SCP_msg_NietAkkoord__User(SCP_pack_t * Packet);
+
+/*
+ * @brief get trash
+ * @param Packet pointer to packet buffer
+ * @return user authorization level
+ */
+bool SCP_msg_NietAkkoord__Trash(SCP_pack_t * Packet);
+
+/*
+ * @brief parse reservation number from msg_Akkoord. 0 = no reservation
+ * @param Packet pointer to packet buffer
+ * @return reservation number
+ */
+int32_t SCP_msg_NietAkkoord__ResvNr(SCP_pack_t * Packet);
+
+/*61-msg_DevInfo*/
+
+/*
+ * @brief Send heartbeat
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_BijEuroOk
+ * -msg_Blokkade
+ * -msg_Error
+ * @param DEVINFO pointer to a devinfo structure
+ */
+#define PROCESS_PT_SCP_MSG_DEVINFO(PACK, DEVINFO, DEVICE) 	PROCESS_SCP_SEND(PACK, SCP_msg_DevInfo(DEVINFO), DEVICE)
+#define PT_SCP_MSG_DEVINFO(PT, PACK, DEVINFO, DEVICE) 		PT_SCP_SEND(PT, PACK, SCP_msg_DevInfo(DEVINFO), DEVICE)
+
+
+/*63-msg_DevInfoOk*/
+/*
+* @brief get the DevInfo from a DefInfoOk message
+* @param Packet pointer to packet buffer
+* @param DevInfo pointer to a definfo structure
+*/
+void SCP_msg_DevInfoOk__DevInfo(SCP_pack_t * Packet, SCP_DevInfo_t * DevInfo);
+
+/*
+ * @brief get the setting bit from a DefInfoOk message
+ * @param Packet pointer to packet buffer
+ * @param DevInfo pointer to a definfo structure
+ */
+void SCP_msg_DevInfoOk__Setting(SCP_pack_t * Packet, SCP_DevInfo_t * DevInfo);
+
+/*64-msg_CashStatus*/
+/*
+ * @brief Send Cash status
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_CashStatusOk
+ * @param VALUE UID = tube state uid[6]=Bill value val[0] = cash box val[1]=Debit card
+ */
+#define PROCESS_PT_SCP_MSG_CASHSTATUS(PACK, VALUE) 	PROCESS_SCP_SEND(PACK, SCP_msg_CashStatus(VALUE), 0)
+#define PT_SCP_MSG_CASHSTATUS(PT, PACK, VALUE) 		PT_SCP_SEND(PT, PACK, SCP_msg_CashStatus(VALUE), 0)
+#define BUFFER_SCP_MSG_CASHSTATUS(VALUE)			BUFFER_SCP_SEND(SCP_msg_CashStatus(VALUE), 0)
+
+/*66-msg_Boot*/
+/*
+ * @brief Send boot message
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_BootOk
+ * -msg_Error
+ */
+#define BUFFER_SCP_MSG_BOOT(DEVINFO, DEVICE)			BUFFER_SCP_SEND_IMPORTANT(SCP_msg_Boot(DEVINFO), DEVICE);
+
+void SCP_msg_Boot__DevInfo(SCP_pack_t * Packet, SCP_DevInfo_t * DevInfo);
+
+/*71-msg_DeurOpen*/
+/*
+ * @brief Send door open message
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -RFIDmsg_DeurOk
+ * -msg_Error
+ */
+#define PROCESS_PT_SCP_MSG_DEUROPEN(PACK) 	PROCESS_SCP_SEND(PACK, SCP_msg_DeurOpen(), 0)
+#define PT_SCP_MSG_DEUROPEN(PT, PACK) 		PT_SCP_SEND(PT, PACK, SCP_msg_DeurOpen(), 0)
+#define BUFFER_SCP_MSG_DEUROPEN()			BUFFER_SCP_SEND(SCP_msg_DeurOpen(), 0)
+
+
+/*72-msg_DeurDicht*/
+/*
+ * @brief Send door close message
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -RFIDmsg_DeurOk
+ * -msg_Error
+ */
+#define PROCESS_PT_SCP_MSG_DEURDICHT(PACK) 	PROCESS_SCP_SEND(PACK, SCP_msg_DeurDicht(), 0)
+#define PT_SCP_MSG_DEURDICHT(PT, PACK) 		PT_SCP_SEND(PT, PACK, SCP_msg_DeurDicht(), 0)
+#define BUFFER_SCP_MSG_DEURDICHT()			BUFFER_SCP_SEND(SCP_msg_DeurDicht(), 0)
+
+/*77-msg_NoodCode*/
+
+/*
+ * @brief Send noodcode used message
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_ok
+ * -msg_Error
+ */
+#define PROCESS_PT_SCP_MSG_NOODCODE(PACK, DAYCODEUSED, NOODCODEUSED) 	PROCESS_SCP_SEND(PACK, SCP_msg_NoodCode(DAYCODEUSED,NOODCODEUSED), 0)
+#define PT_SCP_MSG_NOODCODE(PT, PACK, DAYCODEUSED, NOODCODEUSED) 		PT_SCP_SEND(PT, PACK, SCP_msg_NoodCode(DAYCODEUSED,NOODCODEUSED), 0)
+#define BUFFER_SCP_MSG_NOODCODE(DAYCODEUSED, NOODCODEUSED)				BUFFER_SCP_SEND(SCP_msg_NoodCode(DAYCODEUSED,NOODCODEUSED), 0)
+
+/*
+ * @brief parse msg_NoodCode to get the noodcode as string
+ * @param Packet pointer to packet buffer
+ * @param code_str buffer to save noodcode 17 bytes
+ */
+uint8_t SCP_msg_NoodCode__Noodcode(SCP_pack_t * Packet, char * code_str);
+
+/*
+ * @brief parse msg_NoodCode to get the dagcode as string
+ * @param Packet pointer to packet buffer
+ * @param code_str buffer to save dagcode 17 bytes
+ */
+uint8_t SCP_msg_NoodCode__Dagcode(SCP_pack_t * Packet, char * code_str);
+
+/*111-msg_PinCode*/
+/*
+ * @brief send the pincode
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Akkoord
+ * -msg_NietAkkoord
+ * -msg_Error
+ * @param CODE uint8_t[7] code (0x00..0x0B)(0x0C == empty)
+ */
+#define PROCESS_PT_SCP_MSG_PINCODE(PACK, CODE, DEVICE) 	PROCESS_SCP_SEND(PACK, SCP_msg_PinCode(CODE), DEVICE)
+#define PT_SCP_MSG_PINCODE(PT, PACK, CODE, DEVICE) 		PT_SCP_SEND(PT, PACK, SCP_msg_PinCode(CODE), DEVICE)
+#define BUFFER_SCP_MSG_PINCODE(CODE, DEVICE)			BUFFER_SCP_SEND(SCP_msg_PinCode(CODE), DEVICE);
+
+/*112-msg_GeefPinCode*/
+/*
+ * @brief ask server for a pin code
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_PinCode
+ * -msg_NietAkkoord
+ * -msg_Error
+ * @param PASS_UID UID of user
+ */
+#define PROCESS_PT_SCP_MSG_GEEFPINCODE(PACK, RESVNR, LENGTH) 	PROCESS_SCP_SEND(PACK, SCP_msg_GeefPinCode(RESVNR, LENGTH),0)
+#define PT_SCP_MSG_GEEFPINCODE(PT, PACK, RESVNR, LENGTH) 		PT_SCP_SEND(PT, PACK, SCP_msg_GeefPinCode(RESVNR, LENGTH),0)
+
+void SCP_msg_GeefPinCode__Code(SCP_pack_t * Packet, uint8_t * Code);
+
+/*119-msg_ReserveringBetaal*/
+int32_t SCP_msg_ReserveringBetaal__Centen(SCP_pack_t * Packet);
+
+int32_t SCP_msg_ReserveringBetaal__ResvNr(SCP_pack_t * Packet);
+
+/*220_msg_GeefReservering*/
+/*
+ * @brief Get reservation information
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Reservering
+ * -msg_Onbekend
+ * -msg_Error
+ * @param PASS_UID (uint8_t UID[7]) UID of pass
+ */
+#define PROCESS_PT_SCP_MSG_GEEFRESERVERING(PACK, PASS_UID, RESVNR, DEVICE) 	PROCESS_SCP_SEND(PACK, SCP_msg_GeefReservering(PASS_UID, RESVNR), DEVICE)
+#define PT_SCP_MSG_GEEFRESERVERING(PT, PACK, PASS_UID, RESVNR, DEVICE) 		PT_SCP_SEND(PT, PACK, SCP_msg_GeefReservering(PASS_UID, RESVNR), DEVICE)
+
+/* 221_msg_Reservering*/
+/*
+ * @brief parse msg_Reservering packet
+ * @param Packet pointer to packet buffer
+ * @return Start time of reservation
+ */
+struct tm SCP_msg_Reservering__StartTime(SCP_pack_t * Packet);
+
+/*
+ * @brief parse msg_Reservering packet
+ * @param Packet pointer to packet buffer
+ * @return End time of reservation
+ */
+struct tm SCP_msg_Reservering__EndTime(SCP_pack_t * Packet);
+
+/*222_msg_Reservering_price*/
+/*
+ * @brief Get reservation price
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_ReserveringPrice
+ * -msg_Onbekend
+ * -msg_Error
+ * @param RESVNR reservation number
+ */
+#define PROCESS_PT_SCP_MSG_RESERVERINGPRICE(PACK, RESVNR) 	PROCESS_SCP_SEND(PACK, SCP_msg_ReserveringPrice(RESVNR), 0)
+#define PT_SCP_MSG_RESERVERINGPRICE(PT, PACK, RESVNR) 		PT_SCP_SEND(PT, PACK, SCP_msg_ReserveringPrice(RESVNR), 0)
+
+/*
+ * @brief get reservation price
+ * @param Packet pointer to packet buffer
+ * @return price in centen
+ */
+int32_t SCP_msg_ReserveringPrice__price(SCP_pack_t * Packet);
+
+/* 223-msg_ReserveringBetaald*/
+/*
+ * @brief pay reservation
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * -msg_Error
+ * @param RESVNR reservation number
+ * @param CENTEN value payed
+ */
+#define PROCESS_PT_SCP_MSG_RESERVERINGBETAALD(PACK, RESVNR, CENTEN) 	PROCESS_SCP_SEND(PACK, SCP_msg_ReserveringBetaald(RESVNR, CENTEN), 0)
+#define PT_SCP_MSG_RESERVERINGBETAALD(PT, PACK, RESVNR, CENTEN) 		PT_SCP_SEND(PT, PACK, SCP_msg_ReserveringBetaald(RESVNR, CENTEN), 0)
+#define BUFFER_SCP_MSG_RESERVERINGBETAALD(RESVNR, CENTEN)				BUFFER_SCP_SEND(SCP_msg_ReserveringBetaald(RESVNR, CENTEN), 0)
+
+/*224_msg_ReserveringStarted*/
+/*
+ * @brief let the server know that the reservation is started
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * -msg_Error
+ * @param RESVNR reservation number
+ */
+#define PROCESS_PT_SCP_MSG_RESERVERINGSTARTED(PACK, MACHINE, RESVNR) 	PROCESS_SCP_SEND(PACK, SCP_msg_ReserveringStarted(MACHINE, RESVNR), 0)
+#define PT_SCP_MSG_RESERVERINGSTARTED(PT, PACK, MACHINE, RESVNR) 		PT_SCP_SEND(PT, PACK, SCP_msg_ReserveringStarted(MACHINE, RESVNR), 0)
+#define BUFFER_SCP_MSG_RESERVERINGSTARTED(MACHINE, RESVNR)				BUFFER_SCP_SEND(SCP_msg_ReserveringStarted(MACHINE, RESVNR), 0)
+
+/*225-msg_QR_ReserveringBooked*/
+/*226-msg_RFID_ReserveringBooked*/
+/*
+ * @brief let the server know that a machine is local booked
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_ReserveringBooked
+ * -msg_Error
+ * @param PASS_UID (uint8_t UID[7]) UID of RFID tag
+ * @param MIN (uint16_t)the lenght of the reservation in min
+ * @param MACHINE_TYPE (uint16_t)the machine type
+ */
+#define PROCESS_PT_SCP_MSG_RESERVERINGBOOKED(PACK, PASS_UID, MIN, MACHINE_TYPE) 	PROCESS_SCP_SEND(PACK, SCP_msg_ReserveringBooked(PASS_UID, MIN, MACHINE_TYPE), 0)
+#define PT_SCP_MSG_RESERVERINGBOOKED(PT, PACK, PASS_UID, MIN, MACHINE_TYPE) 		PT_SCP_SEND(PT, PACK, SCP_msg_ReserveringBooked(PASS_UID, MIN, MACHINE_TYPE), 0)
+#define BUFFER_SCP_MSG_RESERVERINGBOOKED(PASS_UID, MIN, MACHINE_TYPE)				BUFFER_SCP_SEND(SCP_msg_ReserveringBooked(PASS_UID, MIN, MACHINE_TYPE), 0)
+
+/*
+ * @brief get reservation number
+ * @param Packet pointer to packet buffer
+ * @return reservation number
+ */
+int32_t SCP_msg_ReserveringBooked__ResvNr(SCP_pack_t * Packet);
+
+/* 228-msg_ReserveringMachine*/
+/*
+ * @brief Get the reservation number of a specific machine
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_ReserveringMachine
+ * -msg_Onbekend
+ * -msg_Error
+ * @param MACHINE number of machine
+ * @param DEVICE DevID of receiver
+ */
+#define PROCESS_PT_SCP_MSG_RESERVERINGMACHINE(PACK, MACHINE, DEVICE) 	PROCESS_SCP_SEND(PACK, SCP_msg_ReserveringMachine(MACHINE), DEVICE)
+#define PT_SCP_MSG_RESERVERINGMACHINE(PT, PACK, MACHINE, DEVICE) 		PT_SCP_SEND(PT, PACK, SCP_msg_ReserveringMachine(MACHINE), DEVICE)
+
+/*
+ * @brief parse msg_ReserveringMachine packet
+ * @param Packet pointer to packet buffer
+ * @return Reservation number of machine
+ */
+int32_t SCP_msg_ReserveringMachine__ResvNr(SCP_pack_t * Packet);
+
+/* 229-msg_ReserveringChanged*/
+/*
+ * @brief parse msg_ReserveringChanged packet
+ * @param Packet pointer to packet buffer
+ * @return machine number of the changed reservation
+ */
+int32_t SCP_msg_ReserveringChanged__Machine(SCP_pack_t * Packet);
+/*
+ * @brief parse msg_ReserveringChanged packet
+ * @param Packet pointer to packet buffer
+ * @return reservation number of the changed reservation
+ */
+int32_t SCP_msg_ReserveringChanged__ResvNr(SCP_pack_t * Packet);
+
+/* 230-msg_ReserveringGetInfo*/
+/*
+ * @brief Get information about a reservation
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_ReserveringSetInfo
+ * -msg_Onbekend
+ * -msg_Error
+ * @param VAR_NAME information to retrieve ("var1,var2")
+ * @param DEVICE DevID of receiver
+ */
+#define PROCESS_PT_SCP_MSG_RESERVERINGGETINFO(PACK, RESVNR, VAR_NAME, DEVICE) 	PROCESS_SCP_SEND(PACK, SCP_msg_ReserveringGetInfo(RESVNR, VAR_NAME), DEVICE)
+#define PT_SCP_MSG_RESERVERINGGETINFO(PT, PACK, RESVNR, VAR_NAME, DEVICE) 		PT_SCP_SEND(PT, PACK, SCP_msg_ReserveringGetInfo(RESVNR, VAR_NAME), DEVICE)
+
+/* 231-msg_ReserveringSetInfo*/
+/*
+ * @brief Get information about a reservation
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_ReserveringSetInfo
+ * -msg_Onbekend
+ * -msg_Error
+ * @param VAR_NAME information to set (var1=1,var2=2)
+ * @param DEVICE DevID of receiver
+ */
+#define PROCESS_PT_SCP_MSG_RESERVERINGSETINFO(PACK, RESVNR, VAR_NAME, DEVICE) 	PROCESS_SCP_SEND(PACK, SCP_msg_ReserveringSetInfo(RESVNR, VAR_NAME), DEVICE)
+#define PT_SCP_MSG_RESERVERINGSETINFO(PT, PACK, RESVNR, VAR_NAME, DEVICE) 		PT_SCP_SEND(PT, PACK, SCP_msg_ReserveringSetInfo(RESVNR, VAR_NAME), DEVICE)
+#define BUFFER_SCP_MSG_RESERVERINGSETINFO(RESVNR, VAR_NAME, DEVICE) 			BUFFER_SCP_SEND(SCP_msg_ReserveringSetInfo(RESVNR, VAR_NAME), DEVICE)
+/*
+ * @brief parse msg_ReserveringInfo packet
+ * @param Packet pointer to packet buffer
+ * @return variable in string format
+ */
+char * SCP_msg_ReserveringSetInfo__var(SCP_pack_t * Packet);
+
+/* 301-msg_LinkInfo*/
+/*
+ * @brief Get link information of a reservation.
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_LinkInfoOk
+ * -msg_Onbekend
+ * -msg_Error
+ * @param RESVNR Reservation number
+ */
+#define PROCESS_PT_SCP_MSG_LINKINFO(PACK, RESVNR) 	PROCESS_SCP_SEND(PACK, SCP_msg_LinkInfo(RESVNR), 0)
+#define PT_SCP_MSG_LINKINFO(PT, PACK, RESVNR) 		PT_SCP_SEND(PT, PACK, SCP_msg_LinkInfo(RESVNR), 0)
+
+/* 302-msg_LinkInfoOk*/
+/*
+ * @brief parse msg_LinkInfoOk packet
+ * @param Packet pointer to packet buffer
+ * @return the color of the linked RFID tags(bracelets)
+ */
+char * SCP_msg_LinkInfoOk__Color(SCP_pack_t * Packet, char * Color);
+
+/*
+ * @brief parse msg_LinkInfoOk packet
+ * @param Packet pointer to packet buffer
+ * @return the number of RFID tags that still had to link to this reservation
+ */
+int32_t SCP_msg_LinkInfoOk__ToLink(SCP_pack_t * Packet);
+
+/*
+ * @brief parse msg_LinkInfoOk packet
+ * @param Packet pointer to packet buffer
+ * @return the number of linked RFID tags
+ */
+int32_t SCP_msg_LinkInfoOk__Linked(SCP_pack_t * Packet);
+
+/* 303-msg_RFIDLink*/
+/*
+ * @brief Link a RFID tag(bracelet) to a reservation.
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_RFIDLinkOk
+ * -msg_NietAkkoord
+ * -msg_Error
+ * @param UID (uint8_t UID[7]) UID of RFID tag
+ * @param RESVNR Reservation number
+ */
+#define PROCESS_PT_SCP_MSG_RFIDLINK(PACK, UID, RESVNR) 	PROCESS_SCP_SEND(PACK, SCP_msg_RFIDLink(UID, RESVNR), 0)
+#define PT_SCP_MSG_RFIDLINK(PT, PACK, UID, RESVNR) 		PT_SCP_SEND(PT, PACK, SCP_msg_RFIDLink(UID, RESVNR), 0)
+
+/* 304-msg_RFIDLinkOk*/
+/*
+ * @brief parse msg_RFIDLinkOk packet
+ * @param Packet pointer to packet buffer
+ * @return the number of RFID tags that still had to link to this reservation
+ */
+int32_t SCP_msg_RFIDLinkOk__ToLink(SCP_pack_t * Packet);
+
+/*
+ * @brief parse msg_RFIDLinkOk packet
+ * @param Packet pointer to packet buffer
+ * @return the number of linked RFID tags
+ */
+int32_t SCP_msg_RFIDLinkOk__Linked(SCP_pack_t * Packet);
+
+/* 305-msg_RFIDUnlink*/
+/*
+ * @brief unLink a RFID tag(bracelet) from a reservation.
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_RFIDUnlinkOk
+ * -msg_NietAkkoord
+ * -msg_Error
+ * @param UID (uint8_t UID[7]) UID of RFID tag
+ */
+
+#define PROCESS_PT_SCP_MSG_RFIDUNLINK(PACK, UID) 	PROCESS_SCP_SEND(PACK, SCP_msg_RFIDUnlink(UID), 0)
+#define PT_SCP_MSG_RFIDUNLINK(PT, PACK, UID) 		PT_SCP_SEND(PT, PACK, SCP_msg_RFIDUnlink(UID), 0)
+
+/*
+ * @brief unLink all RFID tags(bracelets) from a reservation.
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_RFIDUnlinkOk
+ * -msg_NietAkkoord
+ * -msg_Error
+ * @param RESVNR Reservation number
+ */
+#define PROCESS_PT_SCP_MSG_RFIDUNLINKALL(PACK, RESVNR) 	PROCESS_SCP_SEND(PACK, SCP_msg_RFIDUnlinkAll(RESVNR), 0)
+#define PT_SCP_MSG_RFIDUNLINKALL(PT, PACK, RESVNR) 		PT_SCP_SEND(PT, PACK, SCP_msg_RFIDUnlinkAll(RESVNR), 0)
+
+/* 306-msg_RFIDUnlinkOk*/
+/*
+ * @brief parse msg_RFIDUnlinkOk packet
+ * @param Packet pointer to packet buffer
+ * @return the color of the linked RFID tags(bracelets)
+ */
+char * SCP_msg_RFIDUnlinkOk__Color(SCP_pack_t * Packet, char * Color);
+
+/*
+ * @brief parse msg_RFIDUnlinkOk packet
+ * @param Packet pointer to packet buffer
+ * @return Reservation number
+ */
+int32_t SCP_msg_RFIDUnlinkOk__ResvNr(SCP_pack_t * Packet);
+
+/*
+ * @brief parse msg_RFIDUnlinkOk packet
+ * @param Packet pointer to packet buffer
+ * @return the number of linked RFID tags
+ */
+int32_t SCP_msg_RFIDUnlinkOk__Linked(SCP_pack_t * Packet);
+
+/*321-msg_Machine_started*/
+/*
+ * @brief let the server know that a machine is started
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * -msg_Error
+ * @param MACHINE (uint16_t)the machine number
+ * @param MACHINE_TYPE (uint16_t)the machine type
+ */
+#define PROCESS_PT_SCP_MSG_MACHINE_STARTED(PACK, MACHINE, MACHINE_TYPE) 	PROCESS_SCP_SEND(PACK, SCP_msg_Machine_started(MACHINE, MACHINE_TYPE), 0)
+#define PT_SCP_MSG_MACHINE_STARTED(PT, PACK, MACHINE, MACHINE_TYPE) 		PT_SCP_SEND(PT, PACK, SCP_msg_Machine_started(MACHINE, MACHINE_TYPE), 0)
+#define BUFFER_SCP_MSG_MACHINE_STARTED(MACHINE, MACHINE_TYPE)				BUFFER_SCP_SEND(SCP_msg_Machine_started(MACHINE, MACHINE_TYPE), 0)
+
+/*322-msg_Machine_stoped*/
+/*
+ * @brief let the server know that a machine is stoped
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * -msg_Error
+ * @param MACHINE (uint16_t)the machine number
+ */
+#define PROCESS_PT_SCP_MSG_MACHINE_STOPED(PACK, MACHINE) 	PROCESS_SCP_SEND(PACK, SCP_msg_Machine_stoped(MACHINE), 0)
+#define PT_SCP_MSG_MACHINE_STOPED(PT, PACK, MACHINE) 		PT_SCP_SEND(PT, PACK, SCP_msg_Machine_stoped(MACHINE), 0)
+#define BUFFER_SCP_MSG_MACHINE_STOPED(MACHINE)				BUFFER_SCP_SEND(SCP_msg_Machine_stoped(MACHINE), 0)
+
+/*323-msg_Machine_available*/
+/*
+ * @brief check if there is a machine available
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_A
+ * -msg_Akkoord
+ * -msg_Error
+ * @param MACHINE_TYPE (uint16_t)the machine type
+ */
+#define PROCESS_PT_SCP_MSG_MACHINE_AVAILABLE(PACK, MACHINE_TYPE) 	PROCESS_SCP_SEND(PACK, SCP_msg_Machine_available(MACHINE_TYPE), 0)
+#define PT_SCP_MSG_MACHINE_AVAILABLE(PT, PACK, MACHINE_TYPE) 		PT_SCP_SEND(PT, PACK, SCP_msg_Machine_available(MACHINE_TYPE), 0)
+
+/*
+ * @brief parse a Machine_available packet
+ * @param Packet pointer to packet buffer
+ * @return number of pending reservations
+ */
+int32_t SCP_msg_Machine_available__ResvPending(SCP_pack_t * Packet);
+
+/*
+ * @brief parse a Machine_available packet
+ * @param Packet pointer to packet buffer
+ * @return number of minutes free
+ */
+int32_t SCP_msg_Machine_available__min(SCP_pack_t * Packet);
+
+/*
+ * @brief parse a Machine_available packet
+ * @param Packet pointer to packet buffer
+ * @return 0 = no time slot free , 1 =  time slot free
+ */
+int32_t SCP_msg_Machine_available__Akkoord(SCP_pack_t * Packet);
+
+
+//324-msg_Machine_present
+/*
+ * @brief let the server know how many machines there are
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * -msg_Error
+ * @param MACHINE_TYPE (uint8_t)the machine type
+ * @param SUBTYPE (uint8_t) the nr of the parent type 0 = no parent
+ * @param MACHINE_PRESENT nr of machines available of the type
+ * @param PRICE price of type
+ * @param TICK_MIN nr of min per tick
+ */
+#define PROCESS_PT_SCP_MSG_MACHINE_PRESENT(PACK, MACHINE_TYPE, SUBTYPE, MACHINE_PRESENT, PRICE, TICK_MIN) 		PROCESS_SCP_SEND(PACK, SCP_msg_Machine_present(MACHINE_TYPE, SUBTYPE, MACHINE_PRESENT, PRICE, TICK_MIN), 0)
+#define PT_SCP_MSG_MACHINE_PRESENT(PT, PACK, MACHINE_TYPE, SUBTYPE, MACHINE_PRESENT, PRICE, TICK_MIN) 			PT_SCP_SEND(PT, PACK, SCP_msg_Machine_present(MACHINE_TYPE, SUBTYPE, MACHINE_PRESENT, PRICE, TICK_MIN), 0)
+#define BUFFER_SCP_MSG_MACHINE_PRESENT(MACHINE_TYPE, SUBTYPE, MACHINE_PRESENT, PRICE, TICK_MIN)					BUFFER_SCP_SEND(SCP_msg_Machine_present(MACHINE_TYPE, SUBTYPE, MACHINE_PRESENT, PRICE, TICK_MIN), 0)
+
+/*331-msg_RFID_PoortOpen*/
+/*332-msg_QR_PoortOpen*/
+/*
+ * @brief let the server know that the poort is open (for apb)
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * -msg_Error
+ * @param POORT (uint16_t)the poort opend binair
+ */
+#define PROCESS_PT_SCP_MSG_POORTOPEN(PACK, UID, POORT) 		PROCESS_SCP_SEND(PACK,SCP_msg_PoortOpen(UID, POORT), 0)
+#define PT_SCP_MSG_MSG_POORTOPEN(PT, PACK, UID, POORT) 		PT_SCP_SEND(PT, PACK,SCP_msg_PoortOpen(UID, POORT), 0)
+#define BUFFER_SCP_MSG_POORTOPEN(UID, POORT)				BUFFER_SCP_SEND(SCP_msg_PoortOpen(UID, POORT), 0)
+
+/*500-msg_Newprice*/
+/*
+ * @brief parse msg_Newprice
+ * @param Packet pointer to packet buffer
+ * @return new price in centen
+ */
+int32_t SCP_msg_Newprice__Centen(SCP_pack_t * Packet);
+/*
+ * @brief parse msg_Newprice
+ * @param Packet pointer to packet buffer
+ * @return machine nr to change price
+ */
+int32_t SCP_msg_Newprice__Machine(SCP_pack_t * Packet);
+
+/*501-msg_Mode*/
+Mode_t SCP_msg_Mode__Mode(SCP_pack_t * Packet);
+
+
+/* 600-msg_Alert*/
+
+/*
+ * @brief Inform the server of a cabinet burglary
+ */
+#define BUFFER_SCP_MSG_ALERT__CABINET_UNAUTHORIZED_OPEND()				BUFFER_SCP_SEND(SCP_msg_Alert(1,0), 0)
+
+/*
+ * @brief Inform the server of a cashbox burglary
+ */
+#define BUFFER_SCP_MSG_ALERT__CASHBOX_UNAUTHORIZED_OPEND()				BUFFER_SCP_SEND(SCP_msg_Alert(2,0), 0)
+
+/*
+ * @brief Inform the server of entering service menu
+ */
+#define BUFFER_SCP_MSG_ALERT__SERVICE_MENU_ENTERED(AUTH)				BUFFER_SCP_SEND(SCP_msg_Alert(5,AUTH), 0)
+
+
+/*
+ * @brief Inform the server of a machine state change
+ */
+typedef enum{
+	ALERT_ACTIVATION_TIMEOUT = 0,
+}Alert_machine_state_t;
+#define BUFFER_SCP_MSG_ALERT__MACHINE_STATE(STATE)				BUFFER_SCP_SEND(SCP_msg_Alert(10,STATE), 0)
+
+/*
+ * @brief inform the server of a a comm error
+ */
+#define BUFFER_SCP_MSG_ALERT__COMM_ERROR()						BUFFER_SCP_SEND(SCP_msg_Alert(50,0), 0)
+
+/*
+ * @brief inform the server of a boot of a extern machine
+ */
+#define BUFFER_SCP_MSG_ALERT__EXTERN_BOOT(REF)						BUFFER_SCP_SEND(SCP_msg_Alert(51,REF), 0)
+
+/*
+ * @brief inform the server of a error
+ */
+#define BUFFER_SCP_MSG_ALERT__ERROR_PRESENT(ERROR_NR)					BUFFER_SCP_SEND(SCP_msg_Alert(100,ERROR_NR), 0)
+#define BUFFER_SCP_MSG_ALERT__ERROR_GONE(ERROR_NR)						BUFFER_SCP_SEND(SCP_msg_Alert(101,ERROR_NR), 0)
+
+/* 601-msg_Printer_status*/
+
+//STATE
+#define MSG_PAPER_OK 0
+#define MSG_PAPER_LOW 1
+#define MSG_PAPER_EMPTY 2
+#define MSG_DEVICE_UNAVAILABLE 3
+
+//PRINTER
+#define MSG_RECIEPT_PRINTER 0
+#define MSG_TICKET_PRINTER 1
+/*
+ * @brief Inform the server of a change in the paper state
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * @param STATE state of printer
+ * @param PRINTER printer nr 0 = receipt printer 1 = ticket printer
+ */
+#define PROCESS_PT_SCP_MSG_PRINTER_STATUS(PACK, STATE, PRINTER) 	PROCESS_SCP_SEND(PACK, SCP_msg_Printer_status(STATE, PRINTER), 0)
+#define PT_SCP_MSG_PRINTER_STATUS(PT, PACK, STATE, PRINTER) 		PT_SCP_SEND(PT, PACK, SCP_msg_Printer_status(STATE, PRINTER), 0)
+#define BUFFER_SCP_MSG_PRINTER_STATUS(STATE, PRINTER)				BUFFER_SCP_SEND( SCP_msg_Printer_status(STATE, PRINTER), 0)
+
+
+/* 602-msg_Transaction_done*/
+/*
+ * @brief Inform the server of last transaction
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * @param MULTIPASS_PAYED amount payed with multipass in last transaction
+ * @param CASH_PAYED amount payed with coins and bills in last transaction
+ * @param BANK_PAYED amount payed with debitcard in last transaction
+ */
+#define PROCESS_PT_SCP_MSG_TRANSACTION_DONE(PACK, MULTIPASS_PAYED, CASH_PAYED, BANK_PAYED) 		PROCESS_SCP_SEND(PACK, SCP_msg_Transaction_done(MULTIPASS_PAYED, CASH_PAYED, BANK_PAYED), 0)
+#define PT_SCP_MSG_TRANSACTION_DONE(PT, PACK, MULTIPASS_PAYED, CASH_PAYED, BANK_PAYED) 			PT_SCP_SEND(PT, PACK, SCP_msg_Transaction_done(MULTIPASS_PAYED, CASH_PAYED, BANK_PAYED), 0)
+#define BUFFER_SCP_MSG_TRANSACTION_DONE(MULTIPASS_PAYED, CASH_PAYED, BANK_PAYED)				BUFFER_SCP_SEND( SCP_msg_Transaction_done(MULTIPASS_PAYED, CASH_PAYED, BANK_PAYED), 0)
+
+/* 604-msg_Poort_status*/
+/*
+ * @brief Inform the server of the poort status
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * @param ACTION mode of port
+ * @param STATUS state of port
+ * @param PORT bitwise port selection
+ */
+#define PROCESS_PT_SCP_MSG_POORT_STATUS(PACK, ACTION, STATUS, PORT) 				PROCESS_SCP_SEND(PACK, SCP_msg_Poort_status(ACTION, STATUS, PORT), 0)
+#define PT_SCP_MSG_POORT_STATUS(PT, PACK, ACTION, STATUS, PORT) 					PT_SCP_SEND(PT, PACK, SCP_msg_Poort_status(ACTION, STATUS, PORT), 0)
+#define BUFFER_SCP_MSG_POORT_STATUS(ACTION, STATUS, PORT)							BUFFER_SCP_SEND( SCP_msg_Poort_status(ACTION, STATUS, PORT), 0)
+
+/*
+ * @brief parse a Poort_status packet
+ * @param Packet pointer to packet buffer
+ * @return poort number
+ */
+int32_t SCP_msg_Poort_status__Poort(SCP_pack_t * Packet);
+
+/*----------------------------Some functions msg 900 t/m 950----------------------------------------------------*/
+
+/*
+ *@brief add array number to varname
+ *@param buffer output buffer
+ *@param varname name of variable
+ *@param index of array
+ *@return buffer
+ */
+char * SCP_varname_array(char * buffer, char * varname, uint8_t index);
+
+/*
+ * @brief parse array number from varname
+ * @param Name Name of variable
+ * @return index number
+ */
+int16_t SCP_array_number(char * Name);
+
+/*--------------------------------------------------------------------------------------------------------------*/
+
+/*900-msg_var_int_send*/
+/*
+ * @brief Send integer variable
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_Ok
+ * -msg_Error
+ */
+#define PROCESS_PT_SCP_MSG_VAR_INT_SEND(PACK, VAR_NAME, VAR_VALUE, DEVICE) 			PROCESS_SCP_SEND(PACK, SCP_msg_var_int_send(VAR_NAME, VAR_VALUE), DEVICE);
+#define PT_SCP_MSG_VAR_INT_SEND(PT, PACK, VAR_NAME, VAR_VALUE, DEVICE) 				PT_SCP_SEND(PT, PACK, SCP_msg_var_int_send(VAR_NAME, VAR_VALUE), DEVICE);
+#define BUFFER_SCP_MSG_VAR_INT_SEND(VAR_NAME, VAR_VALUE, DEVICE)					BUFFER_SCP_SEND(SCP_msg_var_int_send(VAR_NAME, VAR_VALUE), DEVICE);
+#define BUFFER_SCP_MSG_VAR_INT_SEND_IMPORTANT(VAR_NAME, VAR_VALUE, DEVICE)			BUFFER_SCP_SEND_IMPORTANT(SCP_msg_var_int_send(VAR_NAME, VAR_VALUE), DEVICE);
+
+/*
+ * @brief parse a msg_var_int_--- packet
+ * @param Packet pointer to packet buffer
+ * @return name of variable;
+ */
+char * SCP_msg_var_int__varname(SCP_pack_t * Packet);
+
+/*
+ * @brief parse a msg_var_int_send packet
+ * @param Packet pointer to packet buffer
+ * @return integer value;
+ */
+int32_t SCP_msg_var_int_send__value(SCP_pack_t * Packet);
+
+/*901-msg_var_int_request*/
+/*
+ * @brief request integer variable
+ * @param PACK pointer to packet buffer. Returns message types:
+ * -msg_var_int_send
+ * -msg_Onbekend
+ * -msg_Error
+ */
+#define PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(PACK, VAR_NAME, DEVICE) 				PROCESS_SCP_SEND(PACK, SCP_msg_var_int_request(VAR_NAME), DEVICE);
+#define PT_SCP_MSG_VAR_INT_REQUEST(PT, PACK, VAR_NAME, DEVICE) 					PT_SCP_SEND(PT, PACK, SCP_msg_var_int_request(VAR_NAME), DEVICE);
+#define BUFFER_SCP_MSG_VAR_INT_REQUEST(VAR_NAME, DEVICE)						BUFFER_SCP_SEND(SCP_msg_var_int_request(VAR_NAME), DEVICE);
+
+
+
+#endif //__SCP_MSG_H__

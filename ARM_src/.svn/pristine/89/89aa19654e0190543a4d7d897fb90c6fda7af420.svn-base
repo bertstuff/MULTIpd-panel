@@ -1,0 +1,189 @@
+#include <Core/Process/Process.h>
+#include <Core/protocol/Net/psock.h>
+#include <Core/Debug/Debug_Terminal.h>
+#include <Core/protocol/FAT/ff.h>
+#include <Core/Util/U_string.h>
+#include <Global.h>
+#include <Core/Peripherals/Net_Dev_Init.h>
+#include <Core/Extensions/ini/minGlue-FatFs.h>
+#include <Core/Extensions/ini/minIni.h>
+#include <Core/Memory/cmem.h>
+#include "EJournal.h"
+
+#define EJ_BUF_LEN 1024
+
+PROCESS(EJournal_process, "E-journal upload process");
+
+static struct psock ps_EJournal;
+uint8_t * EJournal_buffer;
+void * EJ_Resolv_handel;
+uip_ipaddr_t g_EJ_Server_ipaddr;
+uint16_t g_EJ_Server_port;
+bool init_done;
+uint32_t bytes_send = 0;
+
+void EJournal_init(void){
+	init_done = false;
+	ini_resolv_ipaddr(&EJ_Resolv_handel,"Server Communication", "E-journal_URL", "multipass.custommate.eu", "URL or IP of e-journal server:", inifile_net);//start ip resolver
+	g_EJ_Server_port = ini_getl("Server Communication", "E-journal_Port",15232,"Port of e-journal server:", inifile_net);
+}
+
+static PT_THREAD(handle_EJournal_connection(struct psock *p)){
+
+	FIL file;
+	DIR dir;
+	char filename[40];
+	UINT br; //bytes read
+	FRESULT rc;
+	FILINFO fno;
+
+	char EJ_dir[30];
+
+	PSOCK_BEGIN(p);
+	while(1){
+		rc = f_mount(&SD_Fatfs,"SD1:",1);
+		if(rc != FR_OK){
+			printf("e-journal: Can't mount sd card (%d)\r\n",rc);
+			goto conn_close;
+		}
+
+		sprintf(EJ_dir,"SD1:/EJ");
+		opendir_label:
+		rc = f_opendir(&dir, EJ_dir);
+		if(rc == FR_NO_PATH){
+			rc = f_mkdir ("SD1:/EJ");
+			if(rc != FR_OK){
+				goto conn_close;
+			}else{
+				goto opendir_label;
+			}
+
+		}
+		if(rc != FR_OK){
+			printf("e-journal: Can't find ejournal dir (%d)\r\n",rc);
+			goto conn_close;
+		}
+
+		rc = f_readdir(&dir, &fno);
+		if (rc != FR_OK || (fno.fname[0] == 0)){// Close connection on error or end of dir
+			goto conn_close;
+		}
+		if (fno.fname[0] == '.'){ continue;} // Ignore dot entry
+		if (fno.fattrib & AM_DIR){ continue;} // It is not a directory (It is a file)
+		sprintf(filename,"%s/%s", EJ_dir, fno.fname);
+
+		//file open
+		rc = f_open(&file, filename, FA_OPEN_EXISTING | FA_READ);
+		if(rc != FR_OK){
+			printf("e-journal: Opening file %s failed (%d)\r\n",filename,rc);
+			goto conn_close;
+		}
+
+		if(bytes_send != 0){
+			f_lseek (&file, bytes_send);
+		}
+
+		rc = f_read(&file, EJournal_buffer, EJ_BUF_LEN, &br);  // Read a chunk of source file
+		if(rc != FR_OK){
+			printf("e-journal: Reading file %s failed (%d)\r\n",filename,rc);
+		}else{
+			printf("e-journal: read ejournal %s -> %d bytes\r\n",filename,br);
+		}
+		f_close(&file);
+
+		if(br != EJ_BUF_LEN){
+			bytes_send = 0;
+			rc = f_unlink(filename);//Remove file
+			if(rc != FR_OK){
+				printf("e-journal: Removing file %s failed (%d)\r\n",filename,rc);
+			}else{
+				printf("e-journal: Removing file %s \r\n",filename);
+			}
+		}else{
+			bytes_send += br;
+		}
+
+		PSOCK_SEND(p, EJournal_buffer, br); //Send data to server
+	}
+conn_close:
+	rc = f_mount(&SD_Fatfs,"SD1",0);
+	if(rc != FR_OK){
+		printf("e-journal: Can't unmount sd card (%d)\r\n",rc);
+	}
+	PSOCK_CLOSE(p);
+	PSOCK_END(p);
+}
+
+
+PROCESS_THREAD(EJournal_process, ev, data)
+{
+	  PROCESS_BEGIN();
+	  if(init_done == false){
+		  EJournal_init();
+		  while(1){
+				if(ev == resolv_event_found){
+					if(get_resolv_ipaddr(&EJ_Resolv_handel, &g_EJ_Server_ipaddr, data)){
+						init_done = true;
+						break;
+					}
+				}
+				PROCESS_WAIT_EVENT();
+		  }
+	  }
+
+	  tcp_connect(&g_EJ_Server_ipaddr, UIP_HTONS(g_EJ_Server_port),NULL);
+	  PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+	  if(uip_aborted() || uip_timedout() || uip_closed()) {
+		printf("e-journal: Could not establish connection to Server\r\n");
+	  } else if(uip_connected()) {
+		printf("e-journal: Server connected\r\n");
+		EJournal_buffer = cmem_malloc(EJ_BUF_LEN);
+		if(EJournal_buffer == NULL){
+			printf("e-journal: malloc failed\r\n");
+			uip_close();
+			PROCESS_EXIT();
+		}
+		PSOCK_INIT(&ps_EJournal, EJournal_buffer, EJ_BUF_LEN);
+		//Loop when connection is establish
+		do {
+		  //New tcp/ip traffic
+		  handle_EJournal_connection(&ps_EJournal);
+		  PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+		} while(!(uip_closed() || uip_aborted() || uip_timedout()));
+		printf("e-journal: Server connection closed.\r\n");
+		cmem_free(EJournal_buffer);
+	  }
+
+	  PROCESS_END();
+}
+
+EJ_Memory_status_t EJ_Memory_status(void){	
+	FRESULT rc;
+
+	rc = f_mount(&SD_Fatfs,"SD1:",1);
+	if(rc != FR_OK){
+		printf("OPP_B50(ejournal): Can't mount sd card \r\n");
+		return S_MEMORY_UNAVALIBLE;
+	}
+
+	/*DWORD fre_clust, fre_sect, tot_sect;
+	rc = f_getfree("0:", &fre_clust, &Fatfs);
+	if(!((rc == FR_OK)||(rc  == FR_NOT_ENABLED))){
+		printf("OPP_B50(ejournal): Failed to get free space indication %d\r\n",rc);
+		return S_MEMORY_UNAVALIBLE;
+	}*/
+
+	if(rc != FR_OK){
+		printf("OPP_B50(ejournal): Can't unmount sd card (%d)\r\n",rc);
+		return S_MEMORY_UNAVALIBLE;
+	}
+
+	/*tot_sect = (Fatfs->n_fatent - 2) * Fatfs->csize;
+	fre_sect = fre_clust * Fatfs->csize;
+	printf("%10lu KiB total drive space.\n%10lu KiB available.\n", tot_sect / 2, fre_sect / 2);
+	if(fre_sect < 2){
+		return S_MEMORY_LOW;
+	}*/
+	return S_MEMORY_OK;
+}
+

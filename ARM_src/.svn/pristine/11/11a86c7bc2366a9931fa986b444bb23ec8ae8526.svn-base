@@ -1,0 +1,175 @@
+#include <Board/Def_config.h>
+#if(MENU_MODULE == 1)
+
+#include "SCR_Menu_handler.h"
+#include <Screen/Menu/SCR_Menu_settings.h>
+#include <Screen/Menu/SCR_Menu_func.h>
+#include <Screen/Menu/SCR_Menu_draw.h>
+#include <Screen/SCR_Message.h>
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <Core/Thread/pt.h>
+#include <Core/timer/stimer.h>
+#include <Core/protocol/Secure/sha1/sha1.h>
+#include <Core/Timer/timer_functions.h>
+
+#include "Menu_handler/SCR_Menu_handler_auth.h"
+#include "Menu_handler/SCR_Menu_handler_menu.h"
+#include "Menu_handler/SCR_Menu_handler_int.h"
+#include "Menu_handler/SCR_Menu_handler_enum.h"
+#include "Menu_handler/SCR_Menu_handler_text.h"
+#include "Menu_handler/SCR_Menu_handler_time.h"
+#include "Menu_handler/SCR_Menu_handler_message.h"
+#include "Menu_handler/SCR_Menu_handler_question.h"
+
+/*-------------prototypes------------*/
+PROCESS(SCR_Menu_process,"Menu screen");
+
+/*--------------Global variables---------*/
+/*Global variable*/
+struct pt menu_pt;
+struct Menu_t * cur_menu;
+uint8_t cur_edit_pos;
+
+/*--------------Functions---------------*/
+void SCR_enter_menu(void){
+
+
+	if(cur_menu->Type == M_MENU){
+		//load next menu
+		cur_menu = ((struct Menu_item_t *)cur_menu->Menu)->next_menu;
+	}
+
+	if(cur_menu->Type == M_MESSAGE){
+		//load next menu
+		cur_menu = ((struct Menu_message_t *)cur_menu->Menu)->next_menu;
+	}
+
+	if(cur_menu->Type == M_AUTH){
+		cur_menu = ((struct Menu_auth_t *)cur_menu->Menu)->next_menu;
+	}else{
+		//Change to auth menu type when authorization failed.
+		SCR_authorization_screen_needed();
+	}
+
+	if(cur_menu->Type == M_MENU){
+		//leave menu when there are no items to display
+		if(cur_menu->Menu == NULL){
+			cur_menu = cur_menu->prev_menu;
+		}
+
+		//Find first menu item;
+		cur_menu->Menu = SCR_get_item_on_page(cur_menu,0,0);
+		if(cur_menu->Menu == NULL){
+			cur_menu = cur_menu->prev_menu;//leave menu when there are no items to display with the right auth level
+		}
+	}
+
+	//init variables
+	cur_int_val = 0;
+	SCR_load_setting(cur_menu);
+
+	cur_edit_pos = 0;
+	//Start handler function
+	if((cur_menu->Type != M_AUTH)&&(cur_menu->Settings != NULL)&&(cur_menu->Settings->Handler != NULL)){
+		(cur_menu->Settings->Handler)(H_MENU_INIT);
+	}
+
+	//trigger init event for custom menu's
+	process_post(&SCR_Menu_process,PROCESS_EVENT_INIT,NULL);
+
+	//draw new menu
+	SCR_build_menu(true);
+	return;
+}
+
+
+void SCR_leave_menu(menu_handler_t event){
+	if(event == H_MENU_ACCEPT){
+		SCR_save_setting(cur_menu);
+	}
+
+	//Start handler function
+	if((cur_menu->Type != M_AUTH)&&(cur_menu->Settings != NULL)&&(cur_menu->Settings->Handler != NULL)){
+		(cur_menu->Settings->Handler)(event);
+	}
+
+	if(SCR_Message_screen_needed() == false){
+		cur_menu = cur_menu->prev_menu;
+	}
+
+	if(cur_menu == NULL){
+		//Exit menu
+		process_post(&SCR_Menu_process,PROCESS_EVENT_EXIT,NULL);
+	}else{
+		//draw new menu
+		SCR_build_menu(true);
+		process_add_poll_event(&SCR_Menu_process);
+	}
+	return;
+}
+
+
+PROCESS_THREAD(SCR_Menu_process, ev, data){
+	PROCESS_BEGIN();
+
+	//Setup Start menu
+	cur_admin_code = SCR_load_code_from_sd(AUTH_ADMIN);
+	cur_Service_code = SCR_load_code_from_sd(AUTH_SERVICE);
+	cur_menu->Menu = SCR_get_item_on_page(cur_menu,0,0);
+	SCR_build_menu(true);
+	SET_SCREEN_TIMEOUT(600);
+	while (ev != PROCESS_EVENT_EXIT){
+		PROCESS_WAIT_EVENT();
+		if(ev == PROCESS_EVENT_EXIT){
+			break;
+		}
+
+		if(PROCESS_EVENT_SCREEN_TIMEOUT){
+			while(cur_menu->prev_menu != NULL){
+				cur_menu = cur_menu->prev_menu;
+			}
+			SCR_leave_menu(H_MENU_CANCEL);
+		}
+
+		if(ev != PROCESS_EVENT_TIMER){
+			SET_SCREEN_TIMEOUT(600);
+		}
+
+		if(cur_menu->Type == M_MENU){
+			PROCESS_PT_SPAWN(&menu_pt, SCR_menu_handler(ev,data));
+		}else if(cur_menu->Type == M_INT){
+			PROCESS_PT_SPAWN(&menu_pt, SCR_int_handler(ev,data));
+		}else if(cur_menu->Type == M_ENUM){
+			PROCESS_PT_SPAWN(&menu_pt, SCR_enum_handler(ev,data));
+		}else if(cur_menu->Type == M_TIME){
+			PROCESS_PT_SPAWN(&menu_pt, SCR_time_handler(ev,data));
+		}else if(cur_menu->Type == M_AUTH){
+			PROCESS_PT_SPAWN(&menu_pt, SCR_auth_handler(ev,data));
+		}else if(cur_menu->Type == M_TEXT){
+			PROCESS_PT_SPAWN(&menu_pt, SCR_text_handler(ev,data));
+		}else if(cur_menu->Type == M_CUSTOM){
+			PROCESS_PT_SPAWN(&menu_pt, (*((struct Menu_custom_t*)cur_menu->Menu)->Menu_handler)(ev,data));
+		}else if(cur_menu->Type == M_MESSAGE){
+			PROCESS_PT_SPAWN(&menu_pt, SCR_message_handler(ev,data));
+		}else if(cur_menu->Type == M_QUESTION){
+			PROCESS_PT_SPAWN(&menu_pt, SCR_question_handler(ev,data));
+		}
+	}
+
+	if(cur_Service_code != 0){
+		SCR_save_code_to_sd(AUTH_SERVICE,cur_Service_code);
+	}
+
+	if(cur_admin_code != 0){
+		SCR_save_code_to_sd(AUTH_ADMIN,cur_admin_code);
+	}
+	Cur_auth_lev = AUTH_NO;
+	Release_menu();
+	PROCESS_END();
+}
+
+#endif

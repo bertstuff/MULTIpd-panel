@@ -1,0 +1,503 @@
+#include <Board/Def_config.h>
+#if(PAYING_MODULE == 1)
+#include "CCV_global.h"
+#include "CCV_Chan2.h"
+#include "CCV.h"
+
+#include <Board/Def_config.h>
+#include <Core/Memory/cmem.h>
+#include <Core/Process/Process.h>
+#include <Core/Timer/etimer.h>
+#include <Core/Debug/Debug_Terminal.h>
+#include <Global.h>
+#include <Core/Extensions/mxml/mxml.h>
+#include <Core/Extensions/ini/minIni.h>
+#include <Core/protocol/FAT/ff.h>
+#include <Device/UART/TG2460H/TG2460H.h>
+#include <Core/Util/array.h>
+#include <cr_section_macros.h>
+#include <Core/Extensions/mxml/mxml-memory.h>
+#include <Screen/Transaction/SCR_Transaction_products.h>
+#include <Screen/Transaction/SCR_Transaction_Receipt.h>
+
+#undef DEBUG
+#define DEBUG 1
+
+#define BUF_LEN_CHAN2 255
+
+struct psock ps_CHAN2;
+struct pt DeviceRequest_pt;
+struct pt Deliverybox_pt;
+extern struct etimer Timeout_T2_tm;
+struct uip_conn * Chan2_connection;
+
+uint8_t g_RequestID_chan2 = 0;
+uint8_t Transaction_counter = 0;
+bool g_deliverybox_ok;
+bool g_receipt_printed;
+uint8_t * g_CCV_buffer_chan2;
+mxml_node_t * chan2_tree = NULL;
+
+PROCESS(CCV_Chan2_process, "Process tcp ip channel 2 CCV->ARM");
+PROCESS(CCV_deliverybox_process, "delivery box process");
+
+CCV_DevReqt_Result_t CCV_CashierDisplay(mxml_node_t * node){
+	mxml_node_t * Line = node;
+	g_OverallResult = R_STATE_CASHIERDISPLAY;
+	process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+	while(1){
+		Line = mxmlFindElement(Line, node, "TextLine",NULL, NULL,MXML_DESCEND);
+		if(Line == NULL){
+			break;
+		}
+		printf("CCV(Chan2): CashierDisplay: %s \r\n",mxmlGetOpaque(Line));
+	}
+	return DR_SUCCESS;
+}
+
+CCV_DevReqt_Result_t CCV_CustomerDisplay(mxml_node_t * node){
+	mxml_node_t * Line = node;
+	g_OverallResult = R_CUSTOMERDISPLAY;
+	process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+	while(1){
+		Line = mxmlFindElement(Line, node, "MainText",NULL, NULL,MXML_DESCEND);
+		if(Line == NULL){
+			break;
+		}
+		printf("CCV(Chan2): CustomerDisplay: %s \r\n",mxmlGetOpaque(Line));
+		Line = mxmlFindElement(Line, node, "SubText",NULL, NULL,MXML_DESCEND);
+		if(Line == NULL){
+			break;
+		}
+		printf("CCV(Chan2): CustomerDisplay: %s \r\n",mxmlGetOpaque(Line));
+	}
+	return DR_SUCCESS;
+}
+
+CCV_DevReqt_Result_t CCV_Printer(mxml_node_t * node){
+	TG2460H_Font_t Font;
+
+	g_OverallResult = R_STATE_PRINTER;
+
+	if(g_cur_payment.print_receipt == false){
+		return DR_SUCCESS;
+	}
+
+	char * Copies = (char * )mxmlElementGetAttr(node,"ReceiptCopies");
+	if(Copies == NULL){
+		#if DEBUG > 0
+		#endif
+		printf("CCV(Chan2): ReceiptCopies == NULL\r\n");
+		//return DR_SUCCESS;
+	}
+
+	//check printer status
+	if(TG2460H_Get_paper_status() == S_PAPER_EMPTY){
+		printf("Paper empty\r\n");
+		return DR_FAILURE;
+	}
+
+	process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+
+	Receipt_header();
+	if(g_CCV_RequestType != TicketReprint){
+		Receipt_Sales_lines();
+	}
+
+	Font.F_bold = false;
+	Font.F_double_strike = false;
+	Font.F_underline = T_0PX;
+	Font.Height = C_NORMAL;
+	Font.Width = C_NORMAL;
+	Font.cpi = CPI_FONTA_25;
+	Font.Font = FONTA;
+
+	//print journal
+	TG2460H_absolute_position(0);
+	TG2460H_Set_font(&Font);
+
+	TG2460H_Size_t doubleW = C_NORMAL, doubleH = C_NORMAL;
+	TG2460H_Size_t predoubleW = C_NORMAL, predoubleH = C_NORMAL;
+	mxml_node_t * Line = node;
+	char * Attr;
+	while(1){
+		Line = mxmlFindElement(Line, node, "TextLine",NULL, NULL,MXML_DESCEND);
+		if(Line == NULL){
+			break;
+		}
+		doubleH = C_NORMAL;
+		doubleW = C_NORMAL;
+		Attr = (char *)mxmlElementGetAttr(Line,"Width");
+		if(Attr != NULL)
+		{
+			doubleH = C_DOUBLE;
+			doubleW = C_DOUBLE;
+		}
+		if((doubleH != predoubleH)||(doubleW != predoubleW)){
+			TG2460H_Set_Font_Size(doubleW,doubleH);
+			predoubleH = doubleH;
+			predoubleW = doubleW;
+		}
+		if(mxmlGetOpaque(Line) == NULL){
+			continue;
+		}
+		TG2460H_Print_string("%s%s\r\n",doubleH == C_DOUBLE?_ALIGN_C_:_ALIGN_L_,mxmlGetOpaque(Line));
+		printf("Print: %s \r\n",mxmlGetOpaque(Line));
+	}
+
+	Receipt_footer();
+	g_receipt_printed = true;
+	return DR_SUCCESS;
+}
+
+
+
+
+CCV_DevReqt_Result_t CCV_E_Journaly(mxml_node_t * node){
+	FIL file;
+	FRESULT rc;
+	char Filename[30];
+
+	g_OverallResult = R_STATE_EJOURNAL;
+	process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+
+	mxml_node_t * TransactionIdentifier;
+	TransactionIdentifier = mxmlFindElement(node, node, "TransactionIdentifier", NULL, NULL,MXML_DESCEND);
+	if(TransactionIdentifier != NULL){
+		snprintf(Filename,30,"SD1:/EJ/%d_%s.xml",Transaction_counter,mxmlGetOpaque(TransactionIdentifier)+4);
+		Transaction_counter++;
+	}else{
+		printf("CCV(Chan2): Can't find TransactionIdentifier \r\n");
+		return DR_PARSINGERROR;
+	}
+
+	rc = f_mkdir("SD1:/EJ");
+	if(rc == FR_OK){
+		printf("CCV(Chan2): Create new dir SD1:/EJ/\r\n");
+	}else if(rc != FR_EXIST){
+		printf("CCV(Chan2): Can't create dir SD1:/EJ/ (%d)\r\n", rc);
+	}
+
+
+	rc = f_open( &file,Filename, FA_CREATE_ALWAYS | FA_WRITE);
+	if(rc != FR_OK)
+	{
+	 printf("CCV(Chan2): Can't create e-journal file %s (%d) \r\n",Filename ,rc);
+	 return DR_FAILURE;
+	}
+	mxmlSaveFile(node, (FILE *) &file, MXML_NO_CALLBACK);
+	rc = f_close(&file);
+	if(rc != FR_OK){
+		printf("CCV(Chan2): Can't close e-journal file %s  (%d)\r\n",Filename ,rc);
+		return DR_FAILURE;
+	}
+
+	printf("CCV(Chan2): Saving E-journal Successful %s\r\n",Filename);
+	return DR_SUCCESS;
+}
+
+PT_THREAD(CCV_DeviceRequest(mxml_node_t * tree,CCV_DevReqt_Result_t * result, process_event_t ev, process_data_t data)){
+	*result = DR_SUCCESS;
+
+	PT_BEGIN(&DeviceRequest_pt);
+	if (tree == NULL){
+		printf("CCV(Chan2): xml parse error (Error in XML structure)\r\n");
+		g_OverallResult = R_PARSINGERROR;
+		process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+		PT_EXIT(&DeviceRequest_pt);
+	}
+	mxml_node_t * node;
+	node = mxmlFindElement(tree, tree, "DeviceRequest",NULL, NULL,MXML_DESCEND);
+	if (node != NULL){
+		char **arr;
+		int size;
+		size = explode(&arr,(char *)mxmlElementGetAttr(node,"RequestID"), '.');
+		if(size < 2){
+			g_OverallResult = R_PARSINGERROR;
+			printf("CCV(Chan2): Error Received wrong RequestID format\r\n");
+			free(arr);
+			process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+			PT_EXIT(&DeviceRequest_pt);
+		}
+		uint8_t Rec_Request_ID_chan1 = atoi(arr[0]);
+		uint8_t Rec_Request_ID_chan2 = atoi(arr[1]);
+		free(arr);
+		if((g_RequestID_chan1 != Rec_Request_ID_chan1)||(g_RequestID_chan2 != Rec_Request_ID_chan2)){
+			g_OverallResult = R_PARSINGERROR;
+			printf("CCV(Chan2): Error Received wrong RequestID (cur:%d.%d != Recv:%d.%d)\r\n", g_RequestID_chan1, g_RequestID_chan2, Rec_Request_ID_chan1, Rec_Request_ID_chan2);
+			process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+			PT_EXIT(&DeviceRequest_pt);
+		}else{
+			printf("CCV(Chan2):(cur:%d.%d == Recv:%d.%d)\r\n", g_RequestID_chan1, g_RequestID_chan2, Rec_Request_ID_chan1, Rec_Request_ID_chan2);
+		}
+	}else{
+		printf("CCV(Chan2): xml parse error (Can't find RequestID)\r\n");
+		g_OverallResult = R_PARSINGERROR;
+		process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+		PT_EXIT(&DeviceRequest_pt);
+	}
+	etimer_set(&Timeout_T2_tm, CLOCK_SECOND * 50);//timeout T2 50sec
+
+	/*-------Execute DeviceTarget-------*/
+	/*CashierDisplay*/
+	node = mxmlFindElement(tree, tree, "Output", "OutDeviceTarget", "CashierDisplay",MXML_DESCEND);
+	if (node != NULL){
+		printf("------------CashierDisplay------------\r\n");
+		*result = CCV_CashierDisplay(node);
+		if(*result != DR_SUCCESS){
+			printf("CCV(Chan2): CashierDisplay Failed\r\n");
+		}
+		PT_EXIT(&DeviceRequest_pt);
+	}
+	/*CustomerDisplay*/
+	node = mxmlFindElement(tree, tree, "Output", "OutDeviceTarget", "CustomerDisplay",MXML_DESCEND);
+	if (node != NULL){
+		printf("------------CustomerDisplay------------\r\n");
+		*result = CCV_CustomerDisplay(node);
+		if(*result != DR_SUCCESS){
+			printf("CCV(Chan2): CustomerDisplay Failed\r\n");
+		}
+		PT_EXIT(&DeviceRequest_pt);
+	}
+	/*Printer*/
+	node = mxmlFindElement(tree, tree, "Output", "OutDeviceTarget", "Printer",MXML_DESCEND);
+	if (node != NULL){
+		printf("------------Printer------------\r\n");
+		*result = CCV_Printer(node);
+		if(*result != DR_SUCCESS){
+			printf("CCV(Chan2): Printer Failed\r\n");
+		}
+		//etimer_set(&delay,CLOCK_SECOND*3);
+		//PT_WAIT_UNTIL(&DeviceRequest_pt,etimer_expired(&delay));
+		PT_EXIT(&DeviceRequest_pt);
+	}
+	/*JournalPrinter (Not implemented)*/
+	node = mxmlFindElement(tree, tree, "Output", "OutDeviceTarget", "JournalPrinter",MXML_DESCEND);
+	if (node != NULL){
+		printf("------------JournalPrinter------------\r\n");
+		g_OverallResult = R_STATE_JOURNALPRINTER;
+		process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+		if(*result != DR_SUCCESS){
+			printf("CCV(Chan2): JournalPrinter Failed\r\n");
+		}
+		PT_EXIT(&DeviceRequest_pt);
+	}
+	/*E-Journal*/
+	node = mxmlFindElement(tree, tree, "Output", "OutDeviceTarget", "E-Journal",MXML_DESCEND);
+	if (node != NULL){
+		printf("------------E-Journal------------\r\n");
+		*result = CCV_E_Journaly(node);
+		if(*result != DR_SUCCESS){
+			printf("CCV(Chan2): E-Journal Failed\r\n");
+		}
+		PT_EXIT(&DeviceRequest_pt);
+	}
+	/*DeliveryBox*/
+	node = mxmlFindElement(tree, tree, "Output", "OutDeviceTarget", "DeliveryBox",MXML_DESCEND);
+	if (node != NULL){
+		printf("------------DeliveryBox------------\r\n");
+		g_OverallResult = R_STATE_DELIVERYBOX;
+		process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+		*result = DR_FAILURE;
+		g_deliverybox_ok = DR_FAILURE;
+		process_start(&CCV_deliverybox_process,NULL);
+		printf("CCV_deliverybox_process starting\r\n");
+		PT_WAIT_UNTIL(&DeviceRequest_pt, !process_is_running(&CCV_deliverybox_process));
+		printf("CCV_deliverybox_process ended\r\n");
+		if(g_deliverybox_ok){
+			*result = DR_SUCCESS;
+		}else{
+			*result = DR_FAILURE;
+		}
+		if(*result != DR_SUCCESS){
+			printf("CCV(Chan2): DeliveryBox Failed\r\n");
+		}
+		PT_EXIT(&DeviceRequest_pt);
+	}
+
+	/*------Error------*/
+	printf("CCV(Chan2): no output device found\r\n");
+	process_post(PROCESS_BROADCAST, event_CCV, &g_OverallResult);
+	*result = DR_FAILURE;
+	PT_END(&DeviceRequest_pt);
+}
+
+uint16_t CCV_DeviceResponse(void * data){
+	CCV_DevReqt_Result_t Result = *(CCV_DevReqt_Result_t *)data;
+	mxml_node_t *xml; /* <?xml ... ?> */
+	mxml_node_t *DeviceResponse; /* <DeviceResponse> */
+	mxml_node_t *Output; /* <Output> */
+
+	mxmlSetWrapMargin(0);
+
+	//<?xml ... ?>
+	xml = mxmlNewXML("1.0");
+
+	//<DeviceResponse>
+	DeviceResponse = mxmlNewElement(xml, "DeviceResponse");
+	mxmlElementSetAttr(DeviceResponse,"WorkstationID",g_CCV_settings.Workstation_ID);
+	mxmlElementSetAttrf(DeviceResponse,"RequestID","%d.%d",g_RequestID_chan1,g_RequestID_chan2);
+	mxmlElementSetAttr(DeviceResponse,"RequestType","Output");
+	mxmlElementSetAttr(DeviceResponse,"OverallResult","Success");
+	mxmlElementSetAttr(DeviceResponse,"xmlns","http://www.nrf-arts.org/IXRetail/namespace");
+
+	//<Output>
+	Output = mxmlNewElement(DeviceResponse, "Output");
+	switch(g_OverallResult){
+	case R_STATE_CASHIERDISPLAY:
+		mxmlElementSetAttr(Output,"OutDeviceTarget","CashierDisplay");
+		break;
+	case R_CUSTOMERDISPLAY:
+		mxmlElementSetAttr(Output,"OutDeviceTarget","CustomerDisplay");
+		break;
+	case R_STATE_PRINTER:
+		mxmlElementSetAttr(Output,"OutDeviceTarget","Printer");
+		break;
+	case R_STATE_JOURNALPRINTER:
+		mxmlElementSetAttr(Output,"OutDeviceTarget","JournalPrinter");
+		break;
+	case R_STATE_EJOURNAL:
+		mxmlElementSetAttr(Output,"OutDeviceTarget","E-Journal");
+		break;
+	case R_STATE_DELIVERYBOX:
+		mxmlElementSetAttr(Output,"OutDeviceTarget","DeliveryBox");
+		break;
+	default:
+		break;
+	}
+	if(Result == DR_SUCCESS){
+		mxmlElementSetAttr(Output,"OutResult","Success");
+	}else if(Result == DR_FAILURE){
+		mxmlElementSetAttr(Output,"OutResult","Failure");
+	}else if(Result == DR_DEVICEUNAVAILABLE){
+		mxmlElementSetAttr(Output,"OutResult","DeviceUnavailable");
+	}else if(Result == DR_FORMATERROR){
+		mxmlElementSetAttr(Output,"OutResult","FormatError");
+	}else if(Result == DR_TIMEDOUT){
+		mxmlElementSetAttr(Output,"OutResult","TimedOut");
+	}else if(Result == DR_PARSINGERROR){
+		mxmlElementSetAttr(Output,"OutResult","ParsingError");
+	}else if(Result == DR_VALIDATIONERROR){
+		mxmlElementSetAttr(Output,"OutResult","ValidationError");
+	}else if(Result == DR_MISSINGMANDATORYDATA){
+		mxmlElementSetAttr(Output,"OutResult","MissingMandatoryData");
+	}
+	mxmlSaveString(xml,  &((char *)uip_appdata)[4], UIP_CONF_BUFFER_SIZE,	MXML_NO_CALLBACK);
+	mxmlDelete(xml);
+	uint8_t i;
+	uint16_t pack_len = 0;
+
+	pack_len = strlen(&((char *)uip_appdata)[4]);
+	for(i = 0; i < 4 ;i++){ //add the lenght bytes to packet
+		((char *)uip_appdata)[i] = pack_len >> ((3 - i)*8);
+	}
+
+	return pack_len + 4;
+}
+
+PROCESS_THREAD(CCV_deliverybox_process, ev, data){
+	PROCESS_BEGIN();
+	printf("CCV_deliverybox_process start\r\n");
+	PROCESS_PT_SPAWN(&Deliverybox_pt,(*g_CCV_settings.Delivery_box)(&Deliverybox_pt, &g_deliverybox_ok, ev, data));
+	printf("CCV_deliverybox_process end\r\n");
+	PROCESS_END();
+}
+
+void sax2_cb(mxml_node_t *node, mxml_sax_event_t event, void *data){
+	 if (event == MXML_SAX_ELEMENT_OPEN){
+		mxmlRetain(node);
+	 }else if (event == MXML_SAX_DIRECTIVE){
+		mxmlRetain(node);
+	}else if (event == MXML_SAX_DATA){
+	  {
+		if (mxmlGetRefCount(mxmlGetParent(node)) > 1)
+		{
+		 /*
+		  * If the parent was retained, then retain
+		  * this data node as well.
+		  */
+
+		  mxmlRetain(node);
+		}
+	  }
+	}
+}
+
+
+
+static PT_THREAD(handle_chan2_connection(struct psock *p,process_event_t ev, process_data_t data)){
+	PSOCK_BEGIN(p);
+	static uint16_t pack_len = 0;
+	uint8_t i;
+	CCV_DevReqt_Result_t Result;
+
+	g_RequestID_chan2 ++;
+#ifdef OPB_B50
+	if(g_RequestID_chan2 == 10){
+		g_RequestID_chan2 = 1;
+	}
+#endif
+
+	printf("CCV(Chan2): RequestID++ (cur:%d.%d)\r\n", g_RequestID_chan1, g_RequestID_chan2);
+
+	/* wait for incoming data*/
+	PSOCK_WAIT_UNTIL(p,psock_newdata(p));
+	pack_len = 1;
+	for(i = 0; i < 4 ;i++){ //get packet lenght
+	   pack_len += *((uint8_t *)(uip_appdata + i)) << ((3 - i)*8);
+	}
+	PSOCK_READ_XML(p,&chan2_tree,sax2_cb,pack_len);
+	printf("CCV(Chan2): RequestID xml (cur:%d.%d)\r\n", g_RequestID_chan1, g_RequestID_chan2);
+#if DEBUG > 0
+	printf("CCV(Chan2): New packet received from CCV lenght %d+4\r\n",pack_len);
+#endif
+	PSOCK_SPAWN(p,&DeviceRequest_pt,CCV_DeviceRequest(chan2_tree,&Result,ev,data));
+	mxmlDelete(chan2_tree);
+	chan2_tree = NULL;
+	etimer_set(&Timeout_T2_tm, CLOCK_SECOND * 50);//timeout T2 50sec
+	/*send response*/
+	PSOCK_GENERATOR_SEND(p,CCV_DeviceResponse,&Result);
+	PSOCK_CLOSE(p);
+	PSOCK_END(p);
+}
+
+PROCESS_THREAD(CCV_Chan2_process, ev, data)
+{
+	  PROCESS_BEGIN();
+	  tcp_listen(UIP_HTONS(4102));
+	  while (ev != PROCESS_EVENT_EXIT){ //loop till exit
+		  PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+		  //Receive new data
+		  if(ev == tcpip_event){
+			  if(uip_connected()) {
+#if DEBUG > 0
+				printf("CCV(Chan2): CCV connected to ARM\r\n");
+#endif
+				g_CCV_buffer_chan2 = cmem_malloc(BUF_LEN_CHAN2);
+				PSOCK_INIT(&ps_CHAN2, g_CCV_buffer_chan2, BUF_LEN_CHAN2);
+				//Loop when connection is establish
+				do {
+					//New tcp/ip traffic
+					if(ev == tcpip_event){
+					  if(etimer_expired(&Timeout_T2_tm)){
+						  uip_close();
+					  }else{
+						handle_chan2_connection(&ps_CHAN2,ev,data);
+					  }
+					}
+					PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+				} while(!(uip_closed() || uip_aborted() || uip_timedout()));
+#if DEBUG > 0
+			 printf("CCV(Chan2): CCV to ARM connection closed.\r\n");
+#endif
+			 if(chan2_tree != NULL){
+				mxmlDelete(chan2_tree);
+				chan2_tree = NULL;
+			 }
+			 cmem_free(g_CCV_buffer_chan2);
+			 }
+		  }
+	  }
+	  PROCESS_END();
+}
+#endif

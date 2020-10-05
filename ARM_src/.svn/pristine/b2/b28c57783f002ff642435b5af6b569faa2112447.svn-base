@@ -1,0 +1,101 @@
+#include "Reservation.h"
+#ifdef RESERVATION_MODULE
+
+#include <Core/Clock/Time_functions.h>
+#include <Core/Extensions/ini/minIni.h>
+#include <Core/protocol/Net/SCP/SCP_Comm.h>
+#include <Core/protocol/Net/SCP/SCP_msg.h>
+#include <Core/protocol/Net/SCP/tRFIDmsg.h>
+#include <Core/Process/process.h>
+#include <Core/Thread/pt.h>
+#include <Global.h>
+#include <Screen/SCR_Text.h>
+#include <Processes/Global_UID.h>
+#include <Screen/SCR_Message.h>
+
+struct pt resv_pt;
+int32_t g_Cur_ResvNr;
+struct tm g_Start_time;
+struct tm g_End_time;
+
+PT_THREAD(get_reservation_time(double * resv_time_len, double * time_to_end, process_event_t ev, process_data_t data))
+{
+	static SCP_pack_t Reservation_packet;
+
+	PT_BEGIN(&resv_pt);
+	PT_SCP_MSG_GEEFRESERVERING(&resv_pt, &Reservation_packet, g_Cur_UID, g_Cur_ResvNr);
+	*time_to_end = 0;
+	if(Reservation_packet.Answer_Message_type == msg_Reservering){
+		struct tm Cur_time;
+
+		g_Start_time = SCP_msg_Reservering__StartTime(&Reservation_packet);
+		printf("SCP:Start reservation %02d-%02d-%02d %02d:%02d UTC\r\n",g_Start_time.tm_mday,g_Start_time.tm_mon+1,g_Start_time.tm_year+1900,g_Start_time.tm_hour,g_Start_time.tm_min);
+		g_End_time = SCP_msg_Reservering__EndTime(&Reservation_packet);
+		printf("SCP:End reservation %02d-%02d-%02d %02d:%02d UTC\r\n",g_End_time.tm_mday,g_End_time.tm_mon+1,g_End_time.tm_year+1900,g_End_time.tm_hour,g_End_time.tm_min);
+		rtc_cal_gettime(&Cur_time);
+		printf("Reservation:Current time %02d:%02d UTC\r\n",Cur_time.tm_hour,Cur_time.tm_min);
+		*time_to_end = difftime(mktime(&g_End_time),mktime(&Cur_time));
+		*resv_time_len = difftime(mktime(&g_End_time),mktime(&g_Start_time));
+	}else if(Reservation_packet.Answer_Message_type == msg_Onbekend){
+		printf("SCP: Reservation unknown\r\n");
+		PT_MESSAGE_SCREEN(&resv_pt,GET_TEXT(S_Reservation_unknown));
+		*time_to_end = 0;
+		*resv_time_len = 0;
+		PT_EXIT(&resv_pt);
+	}else{
+		printf("SCP: Error\r\n");
+		PT_MESSAGE_SCREEN(&resv_pt,GET_TEXT(S_Server_error));
+		*time_to_end = 0;
+		*resv_time_len = 0;
+		PT_EXIT(&resv_pt);
+	}
+	PT_END(&resv_pt);
+}
+
+
+PT_THREAD(Check_reservation_periode( process_event_t ev, process_data_t data))
+{
+	static SCP_pack_t Reservation_packet;
+
+	PT_BEGIN(&resv_pt);
+	PT_SCP_MSG_GEEFRESERVERING(&resv_pt, &Reservation_packet, g_Cur_UID, g_Cur_ResvNr);
+	if(Reservation_packet.Answer_Message_type == msg_Reservering){
+		double diff_time;
+		struct tm Cur_time;
+
+		g_Start_time = SCP_msg_Reservering__StartTime(&Reservation_packet);
+		printf("SCP:Start reservation %02d-%02d-%02d %02d:%02d UTC\r\n",g_Start_time.tm_mday,g_Start_time.tm_mon+1,g_Start_time.tm_year+1900,g_Start_time.tm_hour,g_Start_time.tm_min);
+		g_End_time = SCP_msg_Reservering__EndTime(&Reservation_packet);
+		printf("SCP:End reservation %02d-%02d-%02d %02d:%02d UTC\r\n",g_End_time.tm_mday,g_End_time.tm_mon+1,g_End_time.tm_year+1900,g_End_time.tm_hour,g_End_time.tm_min);
+		rtc_cal_gettime(&Cur_time);
+		printf("Reservation:Current time %02d:%02d UTC\r\n",Cur_time.tm_hour,Cur_time.tm_min);
+
+		diff_time = difftime(mktime(&Cur_time), mktime(&g_Start_time));
+		if(diff_time < 0){
+			printf("SCP:User is to early\r\n");
+			struct tm local_Start_time = {.tm_min = 0, .tm_hour = 0, .tm_year = 0, .tm_mon = 0, .tm_mday = 0};
+			local_Start_time = *LocalTime(&g_Start_time);
+			PT_MESSAGE_SCREEN(&resv_pt,GET_TEXT(S_To_early),local_Start_time.tm_mday,local_Start_time.tm_mon+1,local_Start_time.tm_year+1900,local_Start_time.tm_hour,local_Start_time.tm_min);
+			g_Language = g_Language_def;
+			PT_EXIT(&resv_pt);
+		}
+		if(diff_time > 0){
+			printf("SCP:User is to late\r\n");
+			PT_MESSAGE_SCREEN(&resv_pt,GET_TEXT(S_To_late));
+			g_Language = g_Language_def;
+			PT_EXIT(&resv_pt);
+		}
+	}else if(Reservation_packet.Answer_Message_type == msg_Onbekend){
+		printf("SCP: Reservation unknown\r\n");
+		PT_MESSAGE_SCREEN(&resv_pt,GET_TEXT(S_Reservation_unknown));
+		g_Language = g_Language_def;
+		PT_EXIT(&resv_pt);
+	}else{
+		printf("SCP: Error\r\n");
+		PT_MESSAGE_SCREEN(&resv_pt,GET_TEXT(S_Server_error));
+		g_Language = g_Language_def;
+		PT_EXIT(&resv_pt);
+	}
+	PT_END(&resv_pt);
+}
+#endif

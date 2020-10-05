@@ -1,0 +1,24 @@
+#include <config.h>
+#ifdef MENU_MODULE
+
+#ifndef __SCR_MENU_HANDLER_MENU_H__
+#define __SCR_MENU_HANDLER_MENU_H__
+	#include <stdbool.h>
+	#include <stdint.h>
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <Core/Thread/pt.h>
+	#include <Core/Process/process.h>
+	#include "../SCR_Menu_handler.h"
+
+	#define MENU_ITEMS_PER_PAGE 5
+
+	extern PT_THREAD(SCR_menu_handler(process_event_t ev, process_data_t data));
+	bool SCR_check_menu_item_auth(struct Menu_item_t * menu_item);
+	struct Menu_item_t * SCR_find_prev_menu(struct Menu_item_t * Cur_item);
+	struct Menu_item_t * SCR_find_next_menu(struct Menu_item_t * Cur_item);
+	uint8_t SCR_get_page_number(struct Menu_item_t * Cur_item);
+	struct Menu_item_t * SCR_get_item_on_page(struct Menu_t * menu, uint8_t page_nr, uint8_t item_nr);
+
+#endif //__SCR_MENU_HANDLER_MENU_H__
+#endif

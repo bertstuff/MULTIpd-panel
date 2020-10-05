@@ -1,0 +1,18 @@
+/* Include files */
+#include "Servicepin.h"
+
+/* Global Functions */
+
+bool Servicepin(void){
+  GPIO_SetDir(SERVICE_PORT,(uint32_t)SERVICE_PIN, DIR_INPUT);
+  return !(GPIO_ReadValue(SERVICE_PORT) & ((uint32_t)SERVICE_PIN));
+}
+
+void set_Servicepin_led(bool state){
+	GPIO_SetDir(SERVICE_PORT,(uint32_t)SERVICE_PIN, DIR_OUTPUT);
+	if(state){
+		GPIO_SetValue(SERVICE_PORT,(uint32_t)SERVICE_PIN);
+	}else{
+		GPIO_ClearValue(SERVICE_PORT,(uint32_t)SERVICE_PIN);
+	}
+}

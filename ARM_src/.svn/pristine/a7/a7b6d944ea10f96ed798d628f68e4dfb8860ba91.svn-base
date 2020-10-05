@@ -1,0 +1,22 @@
+#ifndef _Group_id_h_enumeration
+#define _Group_id_h_enumeration
+
+typedef enum GroupId_t {
+	OPWAARDEERAUTOMAAT_PARKING = 3,
+	TOEGANGSPANEEL_SLAGBOOM = 4,
+	TOEGANGSPANEEL_TOURNIQUET = 5,
+	BETAALAUTOMAAT = 6,
+	BETAALAUTOMAAT_DELIVERY = 7,
+	HOME_ENERGY_MANAGMENT = 8,
+	ENERGY_PAAL = 9,
+	DOUCHEPANEEL = 11,
+	WASMACHINE = 12,
+	DROGER = 13,
+	OPWAARDEERAUTOMAAT = 31,
+	RESERVEERBAAR_OBJECT = 51,
+	MASSAGESTOEL = 51,
+	KOPPELINGS_AUTOMAAT = 61,
+} GroupId_t;
+
+/* end of: _Group_id_h_enumeration */
+#endif

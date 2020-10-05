@@ -1,0 +1,28 @@
+#ifndef __TYPE_H__
+#define __TYPE_H__
+
+#include <Driver/include/lpc_types.h>
+
+typedef enum{
+	NL,
+	EN,
+	DE,
+	FR,
+	NOT_SET
+}Language_t;
+
+
+typedef unsigned int clock_time_t;
+typedef unsigned int uip_stats_t;
+
+typedef struct{
+  uint16_t x;
+  uint16_t y;
+}Point_t;
+
+typedef enum{
+	EBM_BASIS = 0,
+	EBM_DOUCHE = 1
+}EBM_type_t;
+
+#endif  /* __TYPE_H__ */

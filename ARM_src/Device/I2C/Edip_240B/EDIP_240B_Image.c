@@ -1,0 +1,132 @@
+#include "EDIP_240B_Image.h"
+#include "EDIP_240B_Send.h"
+#include <stdlib.h>
+#include <Board/Def_config.h>
+
+#if (BOARD_SD_CARD == 1)
+	#include <Core/Extensions/BMP_mono/BMP_mono.h>
+#endif
+
+///////////////Prototype/////////////////////////////////////////////
+
+///////////////Global functions/////////////////////////////////////
+
+//////////////Draw image//////////////////////////////////////
+Status Edip_Load_extern_Image(Point_t p1, char *filename){
+#if (BOARD_SD_CARD == 1)
+  int w, rh, h, lineSize;
+  Status stat;
+  FRESULT rc;
+
+  char buffer[400];
+
+  char *Data; //Begin of data buffer
+  Data = &buffer[DST];
+
+  read_bmp_mono(&Data[7],0, filename, &w, &h, &rc);
+  if(rc  != FR_OK){
+	  return ERROR;
+  }
+  lineSize = (w / 8);
+  if(w % 8){
+	  lineSize++;
+  }
+
+  Data[0] = ESCLCD;
+  Data[1] = 'U';
+  Data[2] = 'L';
+  Data[3] = p1.x;
+  Data[4] = p1.y;
+  Data[5] = w;
+  Data[6] = h;
+
+  stat = Edip_Send(buffer,(lineSize + 7), false);
+
+  rh = 1;
+  while(rh < h){
+	  read_bmp_mono(Data,rh, filename, &w, &h, &rc);
+	  if(rc  != FR_OK){
+		  return ERROR;
+	  }
+	  stat = Edip_Send(buffer,lineSize, false);
+	  rh++;
+  }
+
+  return stat;
+#else
+  return ERROR;
+#endif
+}
+
+Status Edip_Load_Image(Point_t p1, uint8_t Image_nr ){
+  char buffer[6 + HDR];
+  char *Data; //Begin of data buffer
+  Data = &buffer[DST];
+  
+  
+  Data[0] = ESCLCD;
+  Data[1] = 'U';
+  Data[2] = 'I';
+  Data[3] = p1.x;
+  Data[4] = p1.y;
+  Data[5] = Image_nr;
+   
+  return Edip_Send(buffer, 6, false);
+}
+
+//////////////Image settings//////////////////////////////////////
+Status Edip_Image_Zoom(uint8_t Zoom_X, uint8_t Zoom_Y){
+  char buffer[5 + HDR];
+  char *Data; //Begin of data buffer
+  Data = &buffer[DST];
+  
+  if(INRANGE(Zoom_X,1,4) == false){return ERROR;}
+  if(INRANGE(Zoom_Y,1,4) == false){return ERROR;}
+    
+  Data[0] = ESCLCD;
+  Data[1] = 'U';
+  Data[2] = 'Z';
+  Data[3] = Zoom_X;
+  Data[4] = Zoom_Y;
+   
+  return Edip_Send(buffer, 5, false);
+}
+
+Status Edip_Image_Angle(EDIP_Rotate_t Angle){
+  char buffer[4 + HDR];
+  char *Data; //Begin of data buffer
+  Data = &buffer[DST];
+    
+  Data[0] = ESCLCD;
+  Data[1] = 'U';
+  Data[2] = 'W';
+  Data[3] = Angle;
+
+  return Edip_Send(buffer, 4, false);
+}
+
+Status Edip_Image_Mode(EDIP_Mode_t Mode){
+  char buffer[4 + HDR];
+  char *Data; //Begin of data buffer
+  Data = &buffer[DST];
+    
+  Data[0] = ESCLCD;
+  Data[1] = 'U';
+  Data[2] = 'V';
+  Data[3] = Mode;
+
+  return Edip_Send(buffer, 4, false);
+}
+
+Status Edip_Image_Blink(EDIP_Blink_t Blink){
+  char buffer[4 + HDR];
+  char *Data; //Begin of data buffer
+  Data = &buffer[DST];
+    
+  Data[0] = ESCLCD;
+  Data[1] = 'U';
+  Data[2] = 'B';
+  Data[3] = Blink;
+
+  return Edip_Send(buffer, 4, false);
+}

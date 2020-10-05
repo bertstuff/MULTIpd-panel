@@ -1,0 +1,6 @@
+#include <stdlib.h>
+
+void cmem_init(void);
+void * cmem_malloc(size_t size);
+void cmem_free(void * ptr);
+void cmem_print(void);

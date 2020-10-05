@@ -1,0 +1,17 @@
+volatile char *Build_Revision      = "$WCREV$";
+volatile char *Build_Date          = "$WCDATE$";
+
+#ifndef DEBUGGING
+	#if $WCMODS?1:0$
+		#warning Source is modified
+		volatile char *Version_state = "C";
+	#else
+		volatile char *Version_state = "R";
+	#endif
+#else
+	volatile char *Version_state = "D";
+	#warning Debugging enabled
+	#if $WCMODS?1:0$
+		#warning Source is modified
+	#endif
+#endif

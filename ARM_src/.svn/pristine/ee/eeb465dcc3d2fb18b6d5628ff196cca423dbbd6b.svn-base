@@ -1,0 +1,6 @@
+#include <config.h>
+#include <Screen/SCR_Text.h>
+
+	Screen_t g_screen_type = SCR_EDIP;
+	Language_t g_Language;
+	Language_t g_Language_def;

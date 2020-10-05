@@ -1,0 +1,10 @@
+#include <config.h>
+#ifdef MENU_MODULE
+
+#ifndef __SCR_NET_MENU_H__
+#define __SCR_NET_MENU_H__
+
+	void SCR_Net_Menu(struct Menu_t * Menu);
+
+#endif //__SCR_NET_MENU_H__
+#endif

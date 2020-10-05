@@ -1,0 +1,9 @@
+#include <Board/Def_config.h>
+#include <Core/Type/type.h>
+#if(BOARD_SCREEN == 1)
+#include <Screen/SCR_Text.h>
+
+	Screen_t g_screen_type = SCR_EDIP;
+#endif
+Language_t g_Language;
+Language_t g_Language_def;

@@ -1,0 +1,53 @@
+#ifndef _RFID_PASS_
+#define _RFID_PASS_
+
+#include <Core/Thread/pt.h>
+#include <Core/Type/type.h>
+#include <Device/I2C/RFID/RFID.h>
+
+extern struct pt RFID_pass_pt;
+
+#define UNLOCK_CODE_BLOCK 1
+#define INFO_BLOCK 2
+#define LANGUAGE_BYTE 0
+#define MOD_NR_BYTE 1
+#define START_END_DATE 2
+#define AUTH_LEV_BYTE 10
+#define CARD_VERSION_BYTE 11
+
+
+#define CURRENT_CARD_V 1
+
+#define RFID_Check_Unlock_Code(READER,SUCCES) _RFID_Check_Unlock_Code(READER,SUCCES,ev,data)
+PT_THREAD(_RFID_Check_Unlock_Code(RFID_card_t * reader, bool * succes, process_event_t ev, process_data_t data));
+
+#define RFID_Write_Unlock_Code(READER,SUCCES) _RFID_Write_Unlock_Code(READER,SUCCES,ev,data)
+PT_THREAD(_RFID_Write_Unlock_Code(RFID_card_t * reader, bool * succes,process_event_t ev, process_data_t data));
+
+#define RFID_Get_Info(READER,SUCCES) _RFID_Get_Info(READER,SUCCES,ev,data)
+PT_THREAD(_RFID_Get_Info(RFID_card_t * reader, bool * succes, process_event_t ev, process_data_t data));
+
+#define RFID_Set_Info(READER,SUCCES) _RFID_Set_Info(READER,SUCCES,ev,data)
+PT_THREAD(_RFID_Set_Info(RFID_card_t * reader, bool * succes, process_event_t ev, process_data_t data));
+/*
+#define RFID_Set_Language(READER,SUCCES,LANGUAGE) _RFID_Set_Language(READER,SUCCES,LANGUAGE,ev,data)
+PT_THREAD(_RFID_Set_Language(RFID_card_t * reader, bool * succes, Language_t lng, process_event_t ev, process_data_t data));
+*/
+
+/*
+ * Set pass language
+ * @param SUCCES bool * write ok
+ * @param LANGUAGE Language_t language to write
+ */
+/*
+#define PROCESS_PT_RFID_Set_Language(READER, SUCCES, LANGUAGE) 	PROCESS_PT_SPAWN(&RFID_pass_pt, RFID_Set_Language(READER, SUCCES, LANGUAGE))
+#define PT_RFID_Set_Language(PT, READER, SUCCES, LANGUAGE) 		PT_SPAWN(PT, &RFID_pass_pt, RFID_Set_Language(READER, SUCCES, LANGUAGE))
+*/
+/*
+ * Set check unlock code
+ * @param PASS_OK bool pointer to bool true when pass is ok
+ */
+#define PROCESS_PT_RFID_Check_Unlock_Code(READER, PASS_OK) 	PROCESS_PT_SPAWN(&RFID_pass_pt, RFID_Check_Unlock_Code(READER,PASS_OK))
+#define PT_RFID_Check_Unlock_Code(PT, READER, PASS_OK) 		PT_SPAWN(PT, &RFID_pass_pt, RFID_Check_Unlock_Code(READER,PASS_OK))
+
+#endif //_RFID_PASS_

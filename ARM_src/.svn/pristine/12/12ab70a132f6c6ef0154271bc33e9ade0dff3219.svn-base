@@ -1,0 +1,205 @@
+#include "SCP_Device.h"
+#include <Core/Memory/list.h>
+#include <Core/Memory/cmem.h>
+#include <Core/Process/process.h>
+#include <Core/protocol/Net/dns/resolv.h>
+#include <Core/Peripherals/Net_Dev_Init.h>
+#include <Core/Extensions/ini/minIni.h>
+#include <stdbool.h>
+
+LIST(SCP_device_list);
+PROCESS(SCP_Device_process, "SCP find devices");
+
+void * SCP_Resolv_handel = NULL;
+void * SCP_Backup_Resolv_handel = NULL;
+
+const char inifile_SCP_devices[] = "SD1:/SCP_dev.ini";
+
+SCP_Device_t * SCP_create_new_device(uint8_t DevID);
+
+void SCP_Device_init(void){
+	uint8_t i = 0;
+	SCP_Device_t * new_device;
+	char Section_buffer[30];
+	FATFS Fatfs;
+
+	process_start(&SCP_Device_process, NULL);
+	while(1){
+		if(f_mount(&Fatfs,"SD1:",1) == FR_OK){
+			if(ini_getsection(i, Section_buffer, sizeof(Section_buffer), inifile_SCP_devices) > 0){
+				f_mount(NULL,"SD1:",1);
+				new_device = SCP_create_new_device(ini_getl(Section_buffer,"DevID", 0, "Device ID", inifile_SCP_devices));
+				new_device->Port = ini_getl(Section_buffer,"Port", 15233, "Port of device", inifile_SCP_devices);
+				ini_resolv_ipaddr(&new_device->Resolv_handel,Section_buffer, "IP_URL", "multipass.custommate.eu", "URL or IP of device:", inifile_SCP_devices);//start ip resolver
+				i++;
+			}else{
+				break;
+			}
+		}
+	}
+}
+
+SCP_Device_t * SCP_create_new_device(uint8_t DevID){
+	SCP_Device_t *  new_device;
+	new_device = cmem_malloc(sizeof(SCP_Device_t));
+	if(new_device == NULL){
+		return NULL;
+	}
+	memset(new_device,0,sizeof(SCP_Device_t));
+	new_device->DevID = DevID;
+	new_device->State = DEV_UNKNOWN;
+
+	SCP_Device_t * Device = list_head(SCP_device_list);
+	while(Device != NULL){
+		if(Device->DevID == DevID){
+			new_device->Order++;
+		}
+
+		Device = list_item_next(Device);
+	}
+
+	list_add(SCP_device_list, new_device);
+	return new_device;
+}
+
+void SCP_Device_delete(SCP_Device_t * Device){
+	list_remove(SCP_device_list, Device);
+	cmem_free(Device);
+	return;
+}
+
+SCP_Device_t * SCP_Device_connection(struct uip_conn * conn){
+	SCP_Device_t * Device = list_head(SCP_device_list);
+
+	while(Device != NULL){
+		if(memcmp(&Device->Ip, &uip_conn->ripaddr, sizeof(uip_ipaddr_t))==0){
+			return Device;
+		}
+
+		Device = list_item_next(Device);
+	}
+	return NULL;
+}
+
+bool SCP_Device_Known(uint8_t DevID){
+	SCP_Device_t * Device = list_head(SCP_device_list);
+
+	while(Device != NULL){
+		if(Device->DevID == DevID){
+			return true;
+		}
+
+		Device = list_item_next(Device);
+	}
+	return false;
+}
+
+
+void SCP_Device_Find(uint8_t DevID){
+
+	return;
+}
+
+SCP_Device_t * SCP_Loop_known_devices(SCP_Device_t * Device){
+	SCP_Device_t * Device_found;
+	if(Device == NULL){
+		Device_found = list_head(SCP_device_list);
+	}else{
+		Device_found = list_item_next(Device);
+	}
+	while(Device_found){
+		if(Device_found->State > DEV_UNKNOWN){
+			return Device_found;
+		}else{
+			Device_found = list_item_next(Device_found);
+		}
+	}
+	return NULL;
+}
+
+uint8_t SCP_number_of_known_devices(void){
+	uint8_t number = 0 ;
+	SCP_Device_t * Device_found;
+	Device_found = list_head(SCP_device_list);
+	while(Device_found){
+		if(Device_found->State > DEV_UNKNOWN){
+			number++;
+		}
+		Device_found = list_item_next(Device_found);
+	}
+	return number;
+}
+
+SCP_Device_t * SCP_Get_Device(uint8_t DevID){
+	SCP_Device_t * Device_found = NULL;
+	uint8_t order = 0;
+
+	SCP_Device_t * Device = list_head(SCP_device_list);
+
+	while(Device != NULL){
+		if((Device->DevID == DevID)&&(Device->Order == order)){
+			Device_found = Device;
+			if(Device->Attempts > 2){
+				order++;
+				Device = list_head(SCP_device_list);
+			}else{
+				return Device_found;
+			}
+		}
+		Device = list_item_next(Device);
+	}
+	return Device_found;
+}
+
+SCP_Device_t * SCP_Get_Device_order(uint8_t DevID, uint8_t order){
+	SCP_Device_t * Device = list_head(SCP_device_list);
+	while(Device != NULL){
+		if((Device->DevID == DevID)&&(Device->Order == order)){
+			return Device;
+		}
+		Device = list_item_next(Device);
+	}
+	return Device;
+}
+
+bool SCP_Device_Sock_Begin(SCP_Device_t * Device){
+	Device->Buffer = cmem_malloc(SCP_BUFFER_SIZE);
+	if(Device->Buffer == NULL){
+		return false;
+	}
+	PSOCK_INIT(&Device->Socket, Device->Buffer, SCP_BUFFER_SIZE);
+	return true;
+}
+
+bool SCP_Device_Sock_End(SCP_Device_t * Device){
+	cmem_free(Device->Buffer);
+	Device->Buffer = NULL;
+	return true;
+}
+
+PROCESS_THREAD(SCP_Device_process, ev, data)
+{
+
+	PROCESS_BEGIN();
+	while(1){
+		PROCESS_WAIT_EVENT();
+
+		if(ev == resolv_event_found){
+			SCP_Device_t * Device = list_head(SCP_device_list);
+			while(Device != NULL){
+				if(get_resolv_ipaddr(&Device->Resolv_handel, &Device->Ip, data) && (Device->Resolv_handel != NULL)){
+					Device->Resolv_handel = NULL;
+					Device->State = DEV_DISCONNECTED;
+					printf("SCP: New device %d: %d.%d.%d.%d on port %d \r\n",Device->DevID,uip_ipaddr_to_quad(&Device->Ip), Device->Port);
+					Device->Keep_connection = true;
+					BUFFER_SCP_MSG_BOOT(Device->DevID);
+					break;
+				}
+				Device = list_item_next(Device);
+			}
+		}
+	}
+	PROCESS_END();
+}
+
+
