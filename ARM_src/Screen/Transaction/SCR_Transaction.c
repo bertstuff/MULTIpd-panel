@@ -86,24 +86,24 @@ PT_THREAD(Disable_devices(Transaction_info_t * trans, process_event_t ev, proces
 
 	PT_BEGIN(&pay_pt);
 	Devices_enabled = false;
-	if(trans->Coin_changer_available){
+	if(trans->Device_available.Coin_changer_available){
 		MDB_Ontvang(false);
 	}
 
-	if(trans->Cash_available){
+	if(trans->Device_available.Cash_available){
 		XBA_Disable();
 	}
 
-	if(trans->Payter_available){
+	if(trans->Device_available.Payter_available){
 		PT_PTR_MSG_EMV_CANCEL(&pay_pt,&RTP_packet);
 		RTP_Free_packet(&RTP_packet);
 	}
 
-	if(trans->QR_available){
+	if(trans->Device_available.QR_available){
 		QR_enable(false);
 	}
 
-	if(trans->Coin_acceptor_available){
+	if(trans->Device_available.Coin_acceptor_available){
 		EMP_800_set_blocking(true);
 	}
 	PT_END(&pay_pt);
@@ -118,24 +118,24 @@ PT_THREAD(Enable_devices(Transaction_info_t * trans, process_event_t ev, process
 	PT_BEGIN(&pay_pt);
 	Devices_enabled = true;
 
-	if((trans->Payter_available) && (trans->to_pay > 0)){
+	if((trans->Device_available.Payter_available) && (trans->to_pay > 0)){
 		PT_SPAWN(&pay_pt,&RTP_packet.p,PTR_msg_EMV_Transaction(&RTP_packet,trans->to_pay));
 		RTP_Free_packet(&RTP_packet);
 	}
 
-	if(trans->Coin_changer_available){
+	if(trans->Device_available.Coin_changer_available){
 		MDB_Ontvang(true);
 	}
 
-	if(trans->Cash_available){
+	if(trans->Device_available.Cash_available){
 		XBA_Enable();
 	}
 
-	if(trans->QR_available){
+	if(trans->Device_available.QR_available){
 		QR_enable(true);
 	}
 
-	if(trans->Coin_acceptor_available){
+	if(trans->Device_available.Coin_acceptor_available){
 		EMP_800_set_blocking(false);
 	}
 	PT_END(&pay_pt);
@@ -218,12 +218,12 @@ PT_THREAD(Transaction_Delivery_box(struct pt * box_pt, bool *Delivery_ok, proces
 PT_THREAD(Choose_payment_method(Transaction_info_t * trans, Transaction_method_t * method, process_event_t ev, process_data_t data)){
 	TG2460H_Paper_status_t Paper_status;
 	PT_BEGIN(&Transaction_sub_pt);
-	if( !trans->Cash_available &&
-		!trans->Coin_acceptor_available &&
-		!trans->Coin_changer_available &&
-		!trans->Multipass_available &&
-		!trans->Payter_available &&
-		!trans->QR_available
+	if( !trans->Device_available.Cash_available &&
+		!trans->Device_available.Coin_acceptor_available &&
+		!trans->Device_available.Coin_changer_available &&
+		!trans->Device_available.Multipass_available &&
+		!trans->Device_available.Payter_available &&
+		!trans->Device_available.QR_available
 	){
 		Paper_status = TG2460H_Get_paper_status();
 		if(Paper_status == S_PAPER_EMPTY){
@@ -238,17 +238,6 @@ PT_THREAD(Choose_payment_method(Transaction_info_t * trans, Transaction_method_t
 		}
 		*method = DEBIT_CARD_METHOD;
 		PT_EXIT(&Transaction_sub_pt);
-
-		/*
-		Paper_status = TG2460H_Get_paper_status();
-		if(CCV_startup_done() && (Paper_status != S_PAPER_EMPTY) && (Paper_status != S_DEVICE_UNAVAILABLE)){
-			*method = DEBIT_CARD_METHOD;
-		}else{
-			PT_MESSAGE_SCREEN(&Transaction_sub_pt,GET_TEXT(S_pay_diffrent));
-			PT_MESSAGE_SCREEN(&Transaction_sub_pt,GET_TEXT(S_Please_warn_an_employee));
-			*method = CANCEL_METHOD;
-		}
-		PT_EXIT(&Transaction_sub_pt);*/
 	}
 	if(Trans_state_change){
 		Trans_state_change(STATE_PAY_METHOD_QUESTION);
@@ -307,7 +296,6 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 	PT_BEGIN(&Transaction_pt);
 	print_datetime();
 	//--------------------------------------------start init transaction--------------------------------------------
-	Transaction_read_settings(trans);
 	printf("Transaction: start init transaction \r\n");
 	if(trans->reservation == RESERVATION_NO){
 		if(Productlist_total_price(&trans->price) == false){
@@ -336,7 +324,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 
 
 	//choose payment methode
-	if(trans->ATM_available){
+	if(trans->Device_available.ATM_available){
 		printf("Transaction: choose payment method\r\n");
 		PT_SPAWN(&Transaction_pt,&Transaction_sub_pt,Choose_payment_method(trans, &Transaction_method, ev, data));
 		if(Transaction_method == CANCEL_METHOD){
@@ -369,7 +357,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 	//---Cash payements----
 
 	//print receipt?
-	if(trans->Printer_available){
+	if(trans->Device_available.Printer_available){
 		Paper_status = TG2460H_Get_paper_status();
 		if(Paper_status == S_PAPER_OK){
 			//print receipt question
@@ -387,25 +375,24 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 	}
 
 	//device init
-	if(trans->Payter_available){
+	if(trans->Device_available.Payter_available){
 		PT_PTR_MSG_EMV_TRANSACTION(&Transaction_pt, &RTP_packet, trans->to_pay);
 		RTP_Free_packet(&RTP_packet);
 	}
 
-	if(trans->Cash_available){
+	if(trans->Device_available.Cash_available){
 		XBA_Enable();
-		Transaction_read_settings(trans);
 	}
 
-	if(trans->Coin_changer_available){
+	if(trans->Device_available.Coin_changer_available){
 		MDB_Ontvang(true);
 	}
 
-	if(trans->QR_available){
+	if(trans->Device_available.QR_available){
 		QR_enable(true);
 	}
 
-	if(trans->Coin_acceptor_available){
+	if(trans->Device_available.Coin_acceptor_available){
 		EMP_800_enable();
 
 		int32_t coin_added = EMP_800_get_value_added();
@@ -447,7 +434,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 		}
 
 		//--Coins--
-		if(trans->Coin_changer_available){
+		if(trans->Device_available.Coin_changer_available){
 			if(ev == event_coin_inserted){
 				SET_SCREEN_TIMEOUT(60);
 
@@ -467,7 +454,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 			}
 		}
 
-		if(trans->Coin_acceptor_available){
+		if(trans->Device_available.Coin_acceptor_available){
 			if(ev == EMP_800_event){
 				int32_t coin_difference = EMP_800_get_value_added();
 				trans->payed += coin_difference;
@@ -483,7 +470,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 		}
 
 		//--paper money--
-		if(trans->Cash_available){
+		if(trans->Device_available.Cash_available){
 			if(ev == event_Bill_validated){
 				static uint16_t bill_value;
 				SET_SCREEN_TIMEOUT(60);
@@ -543,7 +530,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 
 
 		//--Payter--
-		if(trans->Payter_available){
+		if(trans->Device_available.Payter_available){
 			if(ev == event_RTP){//handel payter event
 				bool mifare;
 				RTP_packet_t * packet = data;
@@ -556,7 +543,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 						mifare = PTR_EMV_Transaction_event_Get_UID(packet, &PTR_UID);
 						RTP_Free_packet(packet);
 						//-multipass card-
-						if((mifare == true) && (trans->Multipass_available)){
+						if((mifare == true) && (trans->Device_available.Multipass_available)){
 							Set_GLobal_UID(PTR_UID);
 							goto Mifare_label;
 						//-Debit card-
@@ -565,7 +552,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 							PT_PTR_MSG_EMV_CLEARING(&Transaction_pt, &RTP_packet, trans->payment_success);
 							RTP_Free_packet(&RTP_packet);
 
-							if((trans->payment_success == true) && (trans->Coin_acceptor_available == true)){
+							if((trans->payment_success == true) && (trans->Device_available.Coin_acceptor_available == true)){
 								EMP_800_reset_value();
 							}
 							if(trans->payment_success == false){
@@ -592,7 +579,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 		}
 
 		//--QR-code--
-		if(trans->QR_available){
+		if(trans->Device_available.QR_available){
 			if(ev == event_QR_present){
 				SET_SCREEN_TIMEOUT(60);
 				Please_wait_screen(true);
@@ -637,7 +624,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 		}
 
 		//--Multipass--
-		if(trans->Multipass_available){
+		if(trans->Device_available.Multipass_available){
 			if((ev == event_card_change)||(ev == PROCESS_EVENT_INIT)){
 				SET_SCREEN_TIMEOUT(60);
 				g_RFID_card = RFID_get_card(RFID_get_reader(0x00));
@@ -753,7 +740,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 	ev = PROCESS_EVENT_INIT;
 	while(ev != PROCESS_EVENT_EXIT){
 		if(ev == PROCESS_EVENT_INIT){
-			if(trans->Coin_changer_available == false){
+			if(trans->Device_available.Coin_changer_available == false){
 				break;
 			}
 
@@ -808,7 +795,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 
 
 	if(trans->payed == 0){
-		if(trans->Printer_available && (trans->payed_SCP > 0)){
+		if(trans->Device_available.Printer_available && (trans->payed_SCP > 0)){
 			Receipt_transaction_canceled(trans);
 		}
 		trans->payment_success = false;
@@ -820,7 +807,7 @@ PT_THREAD(Transaction_thread(Transaction_info_t * trans,process_event_t ev, proc
 	if(trans->payed >= trans->price){
 		PT_SPAWN(&Transaction_pt, &Transaction_sub_pt,Transaction_Delivery_box(&Transaction_sub_pt,&trans->payment_success, ev, data));
 	}
-	if((trans->payment_success == true) && (trans->Coin_acceptor_available == true)){
+	if((trans->payment_success == true) && (trans->Device_available.Coin_acceptor_available == true)){
 		EMP_800_reset_value();
 	}
 
@@ -872,8 +859,8 @@ void SCR_pay(Transaction_info_t * trans, bool refresh_all){
 			Edip_Draw_String(point," %c%.2f ",C_EURO,Centen_to_Euro(trans->to_pay));
 			if(refresh_all == true){
 				Edip_Set_Font(&StdFont);
-				if(trans->Coin_changer_available || trans->Coin_acceptor_available){
-					if(MDB_Warning.TubeAlmostEmpty == true || trans->Coin_acceptor_available){
+				if(trans->Device_available.Coin_changer_available || trans->Device_available.Coin_acceptor_available){
+					if(MDB_Warning.TubeAlmostEmpty == true || trans->Device_available.Coin_acceptor_available){
 						point. x = 10;
 						point. y = 60;
 						Edip_Draw_String(point,GET_TEXT(S_Empty));
@@ -887,7 +874,7 @@ void SCR_pay(Transaction_info_t * trans, bool refresh_all){
 
 				point. x = 10;
 				point. y = 96;
-				if(trans->Coin_changer_available || trans->Coin_acceptor_available){
+				if(trans->Device_available.Coin_changer_available || trans->Device_available.Coin_acceptor_available){
 					Edip_Draw_String(point,"-%s",GET_TEXT(S_Coins));
 					point. x += 62;
 					if(ini_getbool("Coin accept","5cent",false,"Accept 5 cent:",inifile_machine)){
@@ -917,7 +904,7 @@ void SCR_pay(Transaction_info_t * trans, bool refresh_all){
 					point. y += 10;
 				}
 
-				if(trans->Cash_available){
+				if(trans->Device_available.Cash_available){
 					Edip_Draw_String(point,"-%s",GET_TEXT(S_Cash));
 					point. x += 60;
 					if(g_bill_accept[0]){
@@ -939,7 +926,7 @@ void SCR_pay(Transaction_info_t * trans, bool refresh_all){
 					point. y += 10;
 				}
 
-				if(trans->Payter_available){
+				if(trans->Device_available.Payter_available){
 
 					uint32_t tranaction_cost = RTP_transaction_cost(trans->to_pay);
 					if(tranaction_cost == 0){
@@ -951,8 +938,8 @@ void SCR_pay(Transaction_info_t * trans, bool refresh_all){
 					point. y += 10;
 				}
 
-				if(trans->Multipass_available){
-					if(trans->QR_available){
+				if(trans->Device_available.Multipass_available){
+					if(trans->Device_available.QR_available){
 						Edip_Draw_String(point,"-%s/%s",GET_TEXT(S_Multipass),GET_TEXT(S_QR_code));
 					}else{
 						Edip_Draw_String(point,"-%s",GET_TEXT(S_Multipass));
@@ -1064,7 +1051,7 @@ bool check_cash_level(Transaction_info_t * trans, uint16_t centen){
 	uint8_t i;
 	uint32_t level = 0;
 	int32_t change_level;
-	if(trans->Coin_changer_available == false){return true;}
+	if(trans->Device_available.Coin_changer_available == false){return true;}
 	if(SetupDoneCC == false){return false;}
 
 	switch(centen){

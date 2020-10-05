@@ -5,7 +5,7 @@
 #if(BOARD_SCREEN == 1)
 	#include <Screen/SCR_Text.h>
 	#include <Device/I2C/Edip_240B/EDIP_240B.h>
-	#include <Device/Common/LCD_16x2/LCD_16x2.h>
+	#include <Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h>
 
 	#define C_EURO 128
 

@@ -4,7 +4,9 @@
 #include <Global.h>
 #include <stdint.h>
 #include <Power.h>
-#include <Screen/SCR_Idle.h>
+//#include <Screen/SCR_Idle.h>
+#include "MULTIpd_main_process.h"
+#include "Energy_point.h"
 
 //prototypes
 SCP_Data_t SCP_Openpoort(SCP_Device_t * packet_data);
@@ -13,6 +15,7 @@ SCP_Data_t SCP_var_int_request(SCP_Device_t * packet_data);
 SCP_Data_t SCP_boot(SCP_Device_t * packet_data);
 SCP_Data_t SCP_bootOk(SCP_Device_t * packet_data);
 SCP_Data_t SCP_ReserveringChanged(SCP_Device_t * Device);
+SCP_Data_t Panel_msg_var_int_send_handler(SCP_Device_t * Device);
 
 //functions
 
@@ -24,6 +27,7 @@ void SCP_handlers_init(void){
 	SCP_add_new_handler( msg_Boot, SCP_boot);
 	SCP_add_new_handler( msg_BootOk, SCP_boot);
 	SCP_add_new_handler( msg_ReserveringChanged, SCP_ReserveringChanged);
+	SCP_add_new_handler( msg_var_int_send, Panel_msg_var_int_send_handler);
 }
 
 SCP_Data_t SCP_boot(SCP_Device_t * Device){
@@ -43,7 +47,7 @@ SCP_Data_t SCP_Openpoort(SCP_Device_t * Device){
 	gate_action_t action;
 	uint16_t Energy_point_number;
 	uint8_t Output_number;
-	Energy_point_data_t * Power_data;
+	Power_point_data_t * Power_data;
 	char ini_key_buffer[20];
 
 	action = SCP_msg_OpenPoort__Action(Device->Cur_Packet);
@@ -85,7 +89,7 @@ SCP_Data_t SCP_var_int_send(SCP_Device_t * Device){
 	char * name = SCP_msg_var_int__varname(Device->Cur_Packet);
 	int32_t value =	SCP_msg_var_int_send__value(Device->Cur_Packet);
 	int16_t array_nr = SCP_array_number(name);
-	Energy_point_data_t * Power_data = Get_Energy_point_data(array_nr);
+	Power_point_data_t * Power_data = Get_Energy_point_data(array_nr);
 	if(Power_data == NULL){
 		return SCP_msg_Error();
 	}
@@ -107,7 +111,7 @@ SCP_Data_t SCP_var_int_send(SCP_Device_t * Device){
 SCP_Data_t SCP_var_int_request(SCP_Device_t * Device){
 	char * name = SCP_msg_var_int__varname(Device->Cur_Packet);
 	int16_t array_nr = SCP_array_number(name);
-	Energy_point_data_t * Power_data = Get_Energy_point_data(array_nr);
+	Power_point_data_t * Power_data = Get_Energy_point_data(array_nr);
 	if(Power_data == NULL){
 		return SCP_msg_Error();
 	}
@@ -132,11 +136,55 @@ SCP_Data_t SCP_var_int_request(SCP_Device_t * Device){
 
 SCP_Data_t SCP_ReserveringChanged(SCP_Device_t * Device){
 	uint16_t Energy_point_number = SCP_msg_ReserveringChanged__Machine(Device->Cur_Packet);
-	Energy_point_data_t * Power_data = Get_Energy_point_data(Energy_point_number);
+	Power_point_data_t * Power_data = Get_Energy_point_data(Energy_point_number);
 	if(Power_data == NULL){
 		return SCP_msg_Error();
 	}
 	Power_data->Resvnr = SCP_msg_ReserveringChanged__ResvNr(Device->Cur_Packet);
 	Power_data->refresh_data = true;
 	return SCP_msg_Ok();
+}
+
+SCP_Data_t Panel_msg_var_int_send_handler(SCP_Device_t * Device){
+	char * name = SCP_msg_var_int__varname(Device->Cur_Packet);
+	int16_t array_nr;
+	if(strcmp ( name, "Energy_point") == 0){
+		struct Energy_point_t Energy_point;
+		Energy_point.device = Device->Info.SCP_devID;
+		Energy_point.number = SCP_msg_var_int_send__value(Device->Cur_Packet);
+		Energy_point_new(Energy_point);
+		return SCP_msg_Ok();
+	}
+	array_nr = SCP_array_number(name);
+	if(array_nr >= 0){
+		if(Energy_point_exist(array_nr)){
+			Energy_point_data_t * Energy_data;
+			Energy_data = Energy_point_data(array_nr);
+			if(strncmp ( name, "State",5) == 0){
+				if(Energy_data->State != SCP_msg_var_int_send__value(Device->Cur_Packet)){
+					Energy_data->State = SCP_msg_var_int_send__value(Device->Cur_Packet);
+					printf("State changed to %d\r\n", Energy_data->State);
+					process_post(PROCESS_BROADCAST,event_state_update,NULL);
+				}
+				return SCP_msg_Ok();
+			}else if(strncmp ( name, "MaxCurrent",10) == 0){
+				Energy_data->MaxAmpere = SCP_msg_var_int_send__value(Device->Cur_Packet);
+				return SCP_msg_Ok();
+			}else if(strncmp ( name, "Watt",4) == 0){
+				Energy_data->Power = SCP_msg_var_int_send__value(Device->Cur_Packet);
+				return SCP_msg_Ok();
+			}else if(strncmp ( name, "MaxWattHour",11) == 0){
+				Energy_data->MaxWH = SCP_msg_var_int_send__value(Device->Cur_Packet);
+				return SCP_msg_Ok();
+			}else if(strncmp ( name, "CurrentWattHour",14) == 0){
+				Energy_data->WH = SCP_msg_var_int_send__value(Device->Cur_Packet);
+				return SCP_msg_Ok();
+			}else if(strncmp ( name, "Current",7) == 0){
+				Energy_data->Ampere = SCP_msg_var_int_send__value(Device->Cur_Packet);
+				return SCP_msg_Ok();
+			}
+		}
+	}
+
+	return SCP_msg_Error();
 }

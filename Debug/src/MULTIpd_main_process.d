@@ -1,10 +1,12 @@
-src/Screen/SCR_Idle.o src/Screen/SCR_Idle.d: ../src/Screen/SCR_Idle.c \
- ../src/Screen/SCR_Overview.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Process/process.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/pt.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc-switch.h \
- ../src/Screen/SCR_Idle.h ../src/Screen/SCR_Language.h \
+src/MULTIpd_main_process.o src/MULTIpd_main_process.d: \
+ ../src/MULTIpd_main_process.c \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_gpio.h \
+ D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\Device\NXP\LPC17xx\Include/LPC17xx.h \
+ D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cm3.h \
+ D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cmInstr.h \
+ D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cmFunc.h \
+ D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\Device\NXP\LPC17xx\Include/system_LPC17xx.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc_types.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Extensions/ini/minIni.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Board/Def_config.h \
  D:\ARM\MULTIpd_software\Multipd\src/config.h \
@@ -13,6 +15,10 @@ src/Screen/SCR_Idle.o src/Screen/SCR_Idle.d: ../src/Screen/SCR_Idle.c \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/FAT/integer.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/FAT/ffconf.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Init.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Process/process.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/pt.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc-switch.h \
  D:\ARM\MULTIpd_software\Multipd\src/Screen/SCR_Text.h \
  D:\ARM\MULTIpd_software\Multipd\src/Global.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Type/type.h \
@@ -26,12 +32,6 @@ src/Screen/SCR_Idle.o src/Screen/SCR_Idle.d: ../src/Screen/SCR_Idle.c \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Timer/timer.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Clock/clock.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_i2c.h \
- D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\Device\NXP\LPC17xx\Include/LPC17xx.h \
- D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cm3.h \
- D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cmInstr.h \
- D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cmFunc.h \
- D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\Device\NXP\LPC17xx\Include/system_LPC17xx.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc_types.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Text.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Draw.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Image.h \
@@ -40,7 +40,9 @@ src/Screen/SCR_Idle.o src/Screen/SCR_Idle.d: ../src/Screen/SCR_Idle.c \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_IO.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Clipboard.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/core/Timer/etimer.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Clock/Time_functions.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Clock/rtc_cal.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_rtc.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Processes/dev_reset.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_Comm.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_types.h \
@@ -63,25 +65,22 @@ src/Screen/SCR_Idle.o src/Screen/SCR_Idle.d: ../src/Screen/SCR_Idle.c \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Processes/Global_UID.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/core/Timer/timer.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_msg.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/BUTTONS/Buttons_3x4.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/Transaction/SCR_Transaction.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Message.h \
- D:\ARM\MULTIpd_software\Multipd\src/Energy_point.h \
- D:\ARM\MULTIpd_software\Multipd\src/States.h
+ ../src/Power.h ../src/States.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Util/array.h
 
-../src/Screen/SCR_Overview.h:
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_gpio.h:
 
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Process/process.h:
+D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\Device\NXP\LPC17xx\Include/LPC17xx.h:
 
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/pt.h:
+D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cm3.h:
 
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc.h:
+D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cmInstr.h:
 
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc-switch.h:
+D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cmFunc.h:
 
-../src/Screen/SCR_Idle.h:
+D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\Device\NXP\LPC17xx\Include/system_LPC17xx.h:
 
-../src/Screen/SCR_Language.h:
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc_types.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Extensions/ini/minIni.h:
 
@@ -98,6 +97,14 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/FAT/integer.h:
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/FAT/ffconf.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Init.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Process/process.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/pt.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc-switch.h:
 
 D:\ARM\MULTIpd_software\Multipd\src/Screen/SCR_Text.h:
 
@@ -125,18 +132,6 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Clock/clock.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_i2c.h:
 
-D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\Device\NXP\LPC17xx\Include/LPC17xx.h:
-
-D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cm3.h:
-
-D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cmInstr.h:
-
-D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\CMSIS\Include/core_cmFunc.h:
-
-D:\ARM\Bootloader_software\CMSISv1p30_LPC17xx\Device\NXP\LPC17xx\Include/system_LPC17xx.h:
-
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc_types.h:
-
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Text.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Draw.h:
@@ -153,7 +148,11 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Clipboard
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h:
 
-D:\ARM\MULTIpd_software\Multipd\ARM_src/core/Timer/etimer.h:
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Clock/Time_functions.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Clock/rtc_cal.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_rtc.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Processes/dev_reset.h:
 
@@ -199,12 +198,8 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/core/Timer/timer.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_msg.h:
 
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/BUTTONS/Buttons_3x4.h:
+../src/Power.h:
 
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/Transaction/SCR_Transaction.h:
+../src/States.h:
 
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Message.h:
-
-D:\ARM\MULTIpd_software\Multipd\src/Energy_point.h:
-
-D:\ARM\MULTIpd_software\Multipd\src/States.h:
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Util/array.h:

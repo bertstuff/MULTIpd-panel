@@ -41,6 +41,7 @@
 		uint8_t SCP_locnr;
 		uint16_t SCP_devID;
 		GroupId_t SCP_grID;
+		bool SCP_enable;
 	}SCP_DevInfo_t;
 
 

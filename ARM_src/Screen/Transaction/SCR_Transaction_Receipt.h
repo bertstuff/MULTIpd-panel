@@ -3,7 +3,7 @@
 #define __TRANSACTION_RECEIPT_H__
 #if (PAYING_MODULE == 1)
 
-	#include "SCR_Transaction.h"
+	#include <Screen/Transaction/SCR_Transaction.h>
 	#include <Core/Process/process.h>
 
 	void Receipt_init(void);
@@ -16,7 +16,7 @@
 
 	void Receipt_transaction_canceled(Transaction_info_t * trans);
 
-	void Receipt_daily_cash_register_closure(Transaction_info_t * trans);
+	void Receipt_daily_cash_register_closure(Devices_available_t devices_available);
 
 	void Receipt_Cabinet_opened(Transaction_info_t * trans);
 

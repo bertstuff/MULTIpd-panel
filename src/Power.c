@@ -119,7 +119,7 @@ struct ADC_sample_t{
 
 struct ADC_sample_t * first_sample = NULL;
 struct ADC_sample_t * last_sample = NULL;
-Energy_point_data_t g_Mdata[8] = {{.Watt_H = 0},{.Watt_H = 0},{.Watt_H = 0},{.Watt_H = 0}} ;
+Power_point_data_t g_Mdata[8] = {{.Watt_H = 0},{.Watt_H = 0},{.Watt_H = 0},{.Watt_H = 0}} ;
 static struct etimer relay_puls_tm;
 bool g_Relay_active = false;
 static struct etimer led_blink_tm;
@@ -364,7 +364,7 @@ void Power_calc(void){
 	return;
 }
 
-Energy_point_data_t * Get_Energy_point_data(uint16_t Energy_point){
+Power_point_data_t * Get_Energy_point_data(uint16_t Energy_point){
 	uint8_t i;
 	for(i = 0 ;i < 8 ;i++){
 		if(g_Mdata[i].Number == Energy_point){

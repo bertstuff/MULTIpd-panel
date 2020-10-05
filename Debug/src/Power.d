@@ -25,6 +25,23 @@ src/Power.o src/Power.d: ../src/Power.c \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/FAT/integer.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/FAT/ffconf.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Init.h \
+ D:\ARM\MULTIpd_software\Multipd\src/Screen/SCR_Text.h \
+ D:\ARM\MULTIpd_software\Multipd\src/Global.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Text_functions.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Extensions/ini/minIni.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Types.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Send.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Init.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_i2c.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Text.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Draw.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Image.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Touch.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Display.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_IO.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Clipboard.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_gpio.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Memory/memb.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Process/cc.h \
@@ -49,7 +66,7 @@ src/Power.o src/Power.d: ../src/Power.c \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_msg.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/core/Timer/timer.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Processes/Global_UID.h \
- ../src/Power.h ../src/Global.h
+ ../src/Power.h ../src/States.h ../src/Global.h
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Board/Def_config.h:
 
@@ -103,6 +120,40 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/FAT/ffconf.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Init.h:
 
+D:\ARM\MULTIpd_software\Multipd\src/Screen/SCR_Text.h:
+
+D:\ARM\MULTIpd_software\Multipd\src/Global.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Text_functions.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Extensions/ini/minIni.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Types.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Send.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Init.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_i2c.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Text.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Draw.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Image.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Touch.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Display.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_IO.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Clipboard.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h:
+
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_gpio.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Memory/memb.h:
@@ -152,5 +203,7 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/core/Timer/timer.h:
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Processes/Global_UID.h:
 
 ../src/Power.h:
+
+../src/States.h:
 
 ../src/Global.h:

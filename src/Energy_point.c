@@ -45,17 +45,6 @@ void Energy_point_new(struct Energy_point_t Energy_point){
 bool Energy_point_exist(uint8_t Energy_point_nr){
 	struct Energy_point_t * loop_energy_point;
 
-	/* Testcode!! */
-	loop_energy_point = list_head(Energy_point_list);
-	if( loop_energy_point == NULL ) {
-		struct Energy_point_t ep;
-		ep.number = Energy_point_nr;
-		ep.device = 1;
-		ep.data.Ampere = 1000;
-		ep.data.MaxAmpere = 2000;
-		ep.data.State = ST_WAIT_RESERVATION;
-		Energy_point_new(ep);
-	}
 	loop_energy_point = list_head(Energy_point_list);
 	while(loop_energy_point != NULL){
 		if(loop_energy_point->number == Energy_point_nr){

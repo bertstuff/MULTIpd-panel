@@ -12,7 +12,7 @@
 #include <Core/protocol/Net/SCP/SCP_Comm.h>
 #include <Processes/dev_reset.h>
 #if(BOARD_SCREEN == 1)
-#include <Device/Common/LCD_16x2/LCD_16x2.h>
+#include <Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h>
 #include <Device/I2C/Edip_240B/EDIP_240B_Display.h>
 #include <Device/I2C/Edip_240B/EDIP_240B_Text.h>
 #include <Screen/SCR_Message.h>
@@ -73,7 +73,7 @@ PROCESS_THREAD(SCR_Startup_screen, ev, data)
 		if(error_check_no_errors()){
 #if(BOARD_SCREEN == 1)
 			SCP_DevInfo_t SCP_info = SCP_Get_device_info();
-			if((SCP_info.SCP_modnr == 0)||(SCP_info.SCP_locnr == 0)){
+			if(((SCP_info.SCP_modnr == 0)||(SCP_info.SCP_locnr == 0))&&(SCP_info.SCP_enable == true)){
 				PROCESS_PT_MESSAGE_SCREEN("Module/location\r\n is not set!");
 			}
 #endif
@@ -104,13 +104,16 @@ void SCR_Show_error(void){
 			Edip_Set_Font(&StdFont);
 			Edip_Draw_String(point,"  Error code: %d  ",error_number);
 			break;
+		case SCR_LCD_2X12:
 		case SCR_LCD_2X16:
 			point.x = 0;
 			point.y = 1;
-			LCD_2x16_Draw_String(point,"Error code: %d  ",error_number);
+			LCD_Alphanumeric_Draw_String(point,"Error code: %d  ",error_number);
 			break;
 		case SCR_PC:
 			printf("SCR_PC:[error] %d\r\n",error_number);
+			break;
+		case SCR_NONE:
 			break;
 	}
 	return;
@@ -136,15 +139,18 @@ void SCR_Startup(bool event){
 				point.y = 0;
 				Edip_Draw_String(point,"Mod:%d Loc:%d DevId:%d",SCP_info.SCP_modnr,SCP_info.SCP_locnr,SCP_info.SCP_devID);
 				break;
+			case SCR_LCD_2X12:
 			case SCR_LCD_2X16:
 				point.x = 0;
 				point.y = 0;
 
-				LCD_2x16_Clear_Display();
-				LCD_2x16_Draw_String(point,"Startup");
+				LCD_Alphanumeric_Clear_Display();
+				LCD_Alphanumeric_Draw_String(point,"Startup");
 				break;
 			case SCR_PC:
 				printf("SCR_PC:[msg] Startup\r\n");
+			case SCR_NONE:
+				break;
 		}
 		init = false;
 	}
@@ -158,13 +164,16 @@ void SCR_Startup(bool event){
 				Edip_Set_Font(&StdFont);
 				Edip_Draw_String(point,"DNS resolver %d%% ",procent);
 				break;
+			case SCR_LCD_2X12:
 			case SCR_LCD_2X16:
 				point.x = 0;
 				point.y = 1;
-				LCD_2x16_Draw_String(point,"DNS resolver %d%% ",procent);
+				LCD_Alphanumeric_Draw_String(point,"DNS resolver %d%% ",procent);
 				break;
 			case SCR_PC:
 				printf("SCR_PC:[msg] DNS resolver %d%% \r\n",procent);
+				break;
+			case SCR_NONE:
 				break;
 		}
 	}else{

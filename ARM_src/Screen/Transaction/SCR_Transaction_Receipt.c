@@ -295,7 +295,7 @@ void Receipt_transaction_accept(Transaction_info_t * trans){
 #endif
 }
 
-void Receipt_daily_cash_register_closure(Transaction_info_t * trans){
+void Receipt_daily_cash_register_closure(Devices_available_t devices_available){
 	struct tm * local_time;
 
 #ifdef USE_VK80_RECEIPT
@@ -325,7 +325,7 @@ void Receipt_daily_cash_register_closure(Transaction_info_t * trans){
 	VK80_Print_string("\r\n");
 
 	VK80_Print_string("%s: %d\r\n",GET_TEXT(S_Transactions),g_trans_statistics.Transactions);
-	if(trans->Coin_changer_available){
+	if(devices_available.Coin_changer_available){
 		VK80_Print_string("\r\n");
 		VK80_Print_string("%s:\r\n",GET_TEXT(S_Coins_in_machine));
 
@@ -345,22 +345,22 @@ void Receipt_daily_cash_register_closure(Transaction_info_t * trans){
 
 	VK80_Print_string("\r\n");
 
-	if((trans->Coin_changer_available)||(trans->Coin_acceptor_available)){
+	if((devices_available.Coin_changer_available)||(devices_available.Coin_acceptor_available)){
 		VK80_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Coins_payed),Centen_to_Euro(g_trans_statistics.Coins_payed - g_trans_statistics.Coins_return));
 	}
 
-	if(trans->Cash_available){
+	if(devices_available.Cash_available){
 		VK80_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Cash_payed),Centen_to_Euro(g_trans_statistics.Cash_payed));
 	}
 
-	if(trans->Payter_available || trans->ATM_available){
+	if(devices_available.Payter_available || devices_available.ATM_available){
 		VK80_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Debit_card_payed),Centen_to_Euro(g_trans_statistics.Debit_card_payed));
 		if(trans->ATM_available){
 			VK80_Print_string("%s: %d\r\n",GET_TEXT(S_ShiftNumber),CCV_get_ShiftNumber());
 		}
 	}
 
-	if(trans->Multipass_available || trans->QR_available){
+	if(devices_available.Multipass_available || devices_available.QR_available){
 		VK80_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Multipass_payed),Centen_to_Euro(g_trans_statistics.Multipass_payed));
 	}
 #if(RESERVATION_MODULE == 1)
@@ -368,7 +368,7 @@ void Receipt_daily_cash_register_closure(Transaction_info_t * trans){
 		VK80_Print_string("%s: %d\r\n",GET_TEXT(S_Reservations),g_trans_statistics.Reservations);
 	}
 #endif
-	if(trans->Coin_changer_available){
+	if(devices_available.Coin_changer_available){
 		Total += ((g_trans_statistics.Coins_in_cash_box * CoinSF) + g_trans_statistics.Cash_payed);
 		VK80_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Money_in_machine),Centen_to_Euro(Total));
 	}
@@ -412,7 +412,7 @@ void Receipt_daily_cash_register_closure(Transaction_info_t * trans){
 
 	TG2460H_Print_string("%s: %d\r\n",GET_TEXT(S_Transactions),g_trans_statistics.Transactions);
 	TG2460H_Print_string("\r\n");
-	if(trans->Coin_changer_available){
+	if(devices_available.Coin_changer_available){
 		TG2460H_Print_string("%s:\r\n",GET_TEXT(S_Coins_in_machine));
 
 		Total = 0;
@@ -431,22 +431,22 @@ void Receipt_daily_cash_register_closure(Transaction_info_t * trans){
 
 	TG2460H_Print_string("\r\n");
 
-	if(trans->Coin_changer_available){
+	if(devices_available.Coin_changer_available){
 		TG2460H_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Coins_payed),Centen_to_Euro(g_trans_statistics.Coins_payed - g_trans_statistics.Coins_return));
 	}
 
-	if(trans->Cash_available){
+	if(devices_available.Cash_available){
 		TG2460H_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Cash_payed),Centen_to_Euro(g_trans_statistics.Cash_payed));
 	}
 
-	if(trans->Payter_available || trans->ATM_available){
+	if(devices_available.Payter_available || devices_available.ATM_available){
 		TG2460H_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Debit_card_payed),Centen_to_Euro(g_trans_statistics.Debit_card_payed));
-		if(trans->ATM_available){
+		if(devices_available.ATM_available){
 			TG2460H_Print_string("%s: %d\r\n",GET_TEXT(S_ShiftNumber),CCV_get_ShiftNumber());
 		}
 	}
 
-	if(trans->Multipass_available || trans->QR_available){
+	if(devices_available.Multipass_available || devices_available.QR_available){
 		TG2460H_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Multipass_payed),Centen_to_Euro(g_trans_statistics.Multipass_payed));
 	}
 #if(RESERVATION_MODULE == 1)
@@ -497,7 +497,7 @@ void Receipt_Cabinet_opened(Transaction_info_t * trans){
 
 	TG2460H_Print_string("%s: %d\r\n",GET_TEXT(S_Transactions),g_trans_statistics.Transactions);
 	TG2460H_Print_string("\r\n");
-	if(trans->Coin_changer_available){
+	if(trans->Device_available.Coin_changer_available){
 		TG2460H_Print_string("%s:\r\n",GET_TEXT(S_Coins_in_machine));
 
 		Total = 0;
@@ -514,7 +514,7 @@ void Receipt_Cabinet_opened(Transaction_info_t * trans){
 
 	TG2460H_Print_string("\r\n");
 
-	if(trans->Cash_available){
+	if(trans->Device_available.Cash_available){
 		TG2460H_Print_string("%s: EURO %.2f\r\n",GET_TEXT(S_Cash_payed),Centen_to_Euro(g_trans_statistics.Cash_payed));
 	}
 

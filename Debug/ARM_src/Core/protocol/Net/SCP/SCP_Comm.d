@@ -28,6 +28,24 @@ ARM_src/Core/protocol/Net/SCP/SCP_Comm.o \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/pt.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc-switch.h \
+ D:\ARM\MULTIpd_software\Multipd\src/Screen/SCR_Text.h \
+ D:\ARM\MULTIpd_software\Multipd\src/Global.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Text_functions.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Types.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Send.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Init.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Timer/etimer.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Timer/timer.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_i2c.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Text.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Draw.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Image.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Touch.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Display.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_IO.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Clipboard.h \
+ D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/dns/resolv.h \
  d:\arm\multipd_software\multipd\arm_src\core\protocol\net\uip.h \
  d:\arm\multipd_software\multipd\arm_src\core\protocol\net\uipopt.h \
@@ -35,8 +53,6 @@ ARM_src/Core/protocol/Net/SCP/SCP_Comm.o \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/net/tcpip.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Process/Process.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/net/uip.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Timer/etimer.h \
- D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Timer/timer.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/psock.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/uipopt.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/uip.h \
@@ -127,6 +143,42 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc-switch.h:
 
+D:\ARM\MULTIpd_software\Multipd\src/Screen/SCR_Text.h:
+
+D:\ARM\MULTIpd_software\Multipd\src/Global.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Text_functions.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Types.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Send.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Init.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Timer/etimer.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Timer/timer.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Driver/include/lpc17xx_i2c.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Text.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Draw.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Image.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Touch.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Display.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_IO.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/Edip_240B/EDIP_240B_Clipboard.h:
+
+D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h:
+
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/dns/resolv.h:
 
 d:\arm\multipd_software\multipd\arm_src\core\protocol\net\uip.h:
@@ -140,10 +192,6 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/net/tcpip.h:
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Process/Process.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/net/uip.h:
-
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Timer/etimer.h:
-
-D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Timer/timer.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/psock.h:
 

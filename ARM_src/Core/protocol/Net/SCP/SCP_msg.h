@@ -9,11 +9,18 @@
 /*-------------local functions---------------*/
 
 //1
-SCP_Data_t SCP_msg_Present(UID_t UID, uint8_t machine_type);
+
+typedef enum{
+	VAL_MACHINE_TYPE = 0,
+	VAL_MACHINE_NR = 1,
+}msg_Value_t;
+
+SCP_Data_t SCP_msg_Present(UID_t UID, msg_Value_t Value_Type, uint16_t Value);
 //11 & 411
 typedef enum {
 	REASON_UPGRADE = 0,
-	REASON_ROLLBACK = 1
+	REASON_ROLLBACK = 1, //give money back in case of a failure
+	REASON_REFUND = 2	//give money when reserved credit is not used
 }msg_Reason_t;
 
 typedef enum{
@@ -22,7 +29,6 @@ typedef enum{
 	GATE_OPEN,
 	GATE_CLOSED
 }gate_action_t;
-
 SCP_Data_t SCP_msg_BijEuro(UID_t UID,int32_t Centen_Bij,msg_Reason_t Reason);
 //12 & 412
 SCP_Data_t SCP_msg_AfEuro(UID_t UID,int32_t Centen_af);
@@ -75,7 +81,7 @@ SCP_Data_t SCP_msg_ReserveringStarted(uint16_t machine, int32_t ResvNr);
 //225 & 226
 SCP_Data_t SCP_msg_ReserveringBooked(UID_t UID, uint16_t min, uint8_t machine_type);
 //228
-SCP_Data_t SCP_msg_ReserveringMachine(uint16_t Machine);
+SCP_Data_t SCP_msg_ReserveringMachine(uint8_t Machine);
 //230
 SCP_Data_t SCP_msg_ReserveringGetInfo(int32_t ResvNr, char * var_name);
 //231
@@ -141,10 +147,9 @@ SCP_Data_t SCP_msg_var_int_request(char * var_name);
  * -msg_Error
  * @param PASS_UID UID of pass or QR
  */
-#define PROCESS_PT_SCP_MSG_PRESENT(PACK, PASS_UID, MACHINE_TYPE) 	PROCESS_SCP_SEND(PACK, SCP_msg_Present(PASS_UID, MACHINE_TYPE), 0)
-#define PT_SCP_MSG_PRESENT(PT, PACK, PASS_UID, MACHINE_TYPE) 		PT_SCP_SEND(PT, PACK, SCP_msg_Present(PASS_UID, MACHINE_TYPE), 0)
-#define BUFFER_SCP_MSG_PRESENT(PASS_UID, MACHINE_TYPE)				BUFFER_SCP_SEND(SCP_msg_Present(PASS_UID, MACHINE_TYPE), 0)
-
+#define PROCESS_PT_SCP_MSG_PRESENT(PACK, PASS_UID, VALUE_TYPE, VALUE) 	PROCESS_SCP_SEND(PACK, SCP_msg_Present(PASS_UID, VALUE_TYPE, VALUE), 0)
+#define PT_SCP_MSG_PRESENT(PT, PACK, PASS_UID, VALUE_TYPE, VALUE) 		PT_SCP_SEND(PT, PACK, SCP_msg_Present(PASS_UID, VALUE_TYPE, VALUE), 0)
+#define BUFFER_SCP_MSG_PRESENT(PASS_UID, VALUE_TYPE, VALUE)				BUFFER_SCP_SEND(SCP_msg_Present(PASS_UID, VALUE_TYPE, VALUE), 0)
 
 /*11-msg_RFID_BijEuro*/
 /*411-msg_QR_BijEuro*/

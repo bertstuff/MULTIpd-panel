@@ -4,7 +4,9 @@
 #if(BOARD_SCREEN == 1)
 #include "SCR_Init.h"
 #include <version.h>
-#include <Device/Common/LCD_16x2/LCD_16x2_char.h>
+#include <Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h>
+#include <Device/I2C/LCD_Alphanumeric/LCD_symbol.h>
+#include <Device/Devices.h>
 #include <Driver/include/lpc17xx_wdt.h>
 #include <core/Util/build_defs.h>
 
@@ -44,8 +46,9 @@ void SCR_select(Screen_t Screen_type, uint8_t addr){
 	case SCR_EDIP:
 		Edip_Select_LCD(addr);
 		break;
+	case SCR_LCD_2X12:
 	case SCR_LCD_2X16:
-		LCD_2x16_select(addr);
+		LCD_Alphanumeric_select(addr);
 		break;
 	default:
 		break;
@@ -63,6 +66,11 @@ bool SCR_is_busy(void){
 
 void SCR_init(void){
 	Point_t point;
+	g_Devices_available.Screen_available = ini_getbool("Device","Screen_available",true,"Screen available:",inifile_device);
+	if(g_Devices_available.Screen_available == false){
+		return;
+	}
+
 	switch(g_screen_type){
 	case SCR_EDIP:
 		point.x = 120;
@@ -76,18 +84,21 @@ void SCR_init(void){
 		Edip_Draw_String(point,"V%d.%d.%s%s",MAJOR_VERSION,MINOR_VERSION,Build_Revision,Version_state);
 		break;
 	case SCR_LCD_2X16:
+	case SCR_LCD_2X12:
 		point.x = 0;
 		point.y = 0;
-		LCD_2x16_I2C_Init(cur_screen_addr);
+		LCD_Alphanumeric_Init(cur_screen_addr);
 		SCR_Symbol_init();
-		LCD_2x16_Clear_Display();
-		LCD_2x16_Draw_String(point,"%s",PRODUCT_NAME);
-		LCD_2x16_Display_Control(true, false, false);
+		LCD_Alphanumeric_Clear_Display();
+		LCD_Alphanumeric_Draw_String(point,"%s",PRODUCT_NAME);
+		LCD_Alphanumeric_Display_Control(true, false, false);
 		point.y = 1;
-		LCD_2x16_Draw_String(point,"V%d.%d.%s%s",MAJOR_VERSION,MINOR_VERSION,Build_Revision,Version_state);
+		LCD_Alphanumeric_Draw_String(point,"V%d.%d.%s%s",MAJOR_VERSION,MINOR_VERSION,Build_Revision,Version_state);
 		break;
 	case SCR_PC:
 		printf("SCR_PC:[version] V%d.%d.%s%s",MAJOR_VERSION,MINOR_VERSION,Build_Revision,Version_state);
+		break;
+	case SCR_NONE:
 		break;
 	}
 
@@ -113,7 +124,7 @@ void SCR_Font_init(void){
 }
 
 void SCR_Symbol_init(void){
-  LCD_2x16_Load_Symbol(1,C_Euro);
+  LCD_Alphanumeric_Load_Symbol(1,C_Euro);
   return;
 }
 #endif

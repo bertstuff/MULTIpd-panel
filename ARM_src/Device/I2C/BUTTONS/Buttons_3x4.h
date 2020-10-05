@@ -26,6 +26,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifndef GPIO_ADDR
+#define GPIO_ADDR 0xFE
+#endif
+
 //Key values
 #define C_BUTTON1  1
 #define C_BUTTON2  2
@@ -63,8 +67,8 @@ extern Status Button3x4_Error;
  * @param address keypad address 0..7 or address
  * @return void
  */
-void Button3x4_init(uint8_t address);
-
+void Button3x4_I2C_init(uint8_t address);
+void Button3x4_IO_init(void);
 /*
  * @brief activate or deactivate the backlight and events
  * keypad create event_Button3x4_pressed event when pressed and activated.
@@ -72,6 +76,28 @@ void Button3x4_init(uint8_t address);
  * @return void
  */
 void Button3x4_activate(bool state);
+
+/*--------------KEYPAD--------------*/
+/*
+ * @brief Init the keypad
+ * @param address keypad address 0..7 or address IO_ADDR for IO lcd
+ * @return void
+ */
+void keypad_init(uint8_t address);
+/*
+ * @brief activate or deactivate the backlight and events
+ * keypad create event_Button3x4_pressed event when pressed and activated.
+ * @param state true = active
+ * @return void
+ */
+#define keypad_activate(STATE)	Button3x4_activate(STATE)
+
+//return true if event is keypad pressed
+bool keypad_pressed(process_event_t ev);
+
+//get key data of keypad event
+uint8_t keypad_button(process_event_t ev, process_data_t data);
+
 
 #endif //_I2C_BUTTON3X4_H_
  /**

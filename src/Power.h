@@ -4,17 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <time.h>
-
-typedef enum{
-	ST_OFF = 0,
-	ST_ON = 1,
-	ST_OVERCURRENT = 2,
-	ST_NO_RESERVATION = 3,
-	ST_WAIT_RESERVATION = 4,
-	ST_END_RESERVATION = 5,
-	ST_NO_KWH_LEFT = 6,
-	ST_MANUAL = 7
-}State_t;
+#include "States.h"
 
 typedef struct {
 	uint16_t Number;
@@ -31,10 +21,10 @@ typedef struct {
 	bool output_enabled;
 	bool refresh_data;
 	bool refresh_reservation;
-}Energy_point_data_t;
+}Power_point_data_t;
 
 
-extern Energy_point_data_t g_Mdata[8];
+extern Power_point_data_t g_Mdata[8];
 extern process_event_t event_test_input;
 
 void Power_init(void);
@@ -46,7 +36,7 @@ bool Get_Output_nr(uint16_t point_nr, uint8_t * number);
 void power_enable(uint16_t point_nr);
 void power_disable(uint16_t point_nr);
 
-Energy_point_data_t * Get_Energy_point_data(uint16_t Energy_point);
+Power_point_data_t * Get_Energy_point_data(uint16_t Energy_point);
 
 PROCESS_NAME(MULTIpdtest_process);
 

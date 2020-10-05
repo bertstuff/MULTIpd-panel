@@ -7,6 +7,7 @@
 	#include <Core/Thread/pt.h>
 	#include <stdbool.h>
 	#include <stdint.h>
+	#include <Device/Devices.h>
 
 	typedef enum{
 		PAY_LOCAL,
@@ -34,17 +35,7 @@
 
 	typedef struct{
 		//--payment devices available--
-		bool Payter_available;
-		bool Cash_available;
-		bool Coin_changer_available;
-		bool Coin_acceptor_available;
-		bool ATM_available;
-		bool Multipass_available;
-		bool Multipass_offline;
-		bool Multipass_online;
-		bool EltraRFID_available;
-		bool QR_available;
-		bool Printer_available;
+		Devices_available_t Device_available;
 
 		//--mandatory transaction information--
 		Transaction_type_t Transaction_type;

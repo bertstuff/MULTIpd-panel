@@ -14,7 +14,6 @@
 #include <string.h>
 #include "Energy_point.h"
 #include "SCR_pin.h"
-#include "Power.h"
 
 /*prototype*/
 PROCESS(SCR_Overview_screen, "Overview screen");
@@ -29,7 +28,6 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 	SCP_pack_t * SCP_packet;
 	static Energy_point_data_t * measure_data;
 	char name_buffer[20];
-	Power_data_t * Power_data = Get_Energy_point_data(g_Current_energy_point);
 
 	if(etimer_expired(&poll_tm)){
 		etimer_set(&poll_tm,CLOCK_SECOND);
@@ -40,11 +38,6 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 
 	Please_wait_screen(true);
 	printf("Wait screen present\n");
-
-	Energy_point_data_t * Energy_data;
-	Energy_data = Energy_point_data(g_Current_energy_point);
-
-#ifdef ORIGINAL
 	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"State",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
 	printf("s1\n");
 	if(SCP_packet->Data.Message_type == msg_var_int_send){
@@ -54,22 +47,7 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 		SCR_load(&SCR_idle_screen);
 		PROCESS_EXIT();
 	}
-#else
-	if( Energy_data->State != Power_data->State ) {
-		printf("State changed to %d\r\n", Energy_data->State);
-		process_post(PROCESS_BROADCAST,event_state_update,NULL);
-		Energy_data->State = Power_data->State;
-	}
-
-#endif
-
-
-#ifdef ORIGINAL
 	printf("s2\n");
-			}else if(strncmp ( name, "MaxCurrent",10) == 0){
-				return SCP_msg_var_int_send(name, Power_data->Current_max);
-			}else if(strncmp ( name, "MaxCurrent",10) == 0){
-				Energy_data->MaxAmpere = SCP_msg_var_int_send__value(Device->Cur_Packet);
 	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"MaxCurrent",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
 	printf("s3\n");
 	if(SCP_packet->Data.Message_type == msg_var_int_send){
@@ -80,18 +58,6 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 		PROCESS_EXIT();
 	}
 	printf("s4\n");
-#else
-	Energy_data->MaxAmpere = measure_data->MaxAmpere = Power_data->Current_max;
-#endif
-
-
-#ifdef ORIGINAL
-			}else if(strncmp ( name, "Current",7) == 0){
-				return SCP_msg_var_int_send(name, Power_data->Current_RMS);
-			}else if(strncmp ( name, "Current",7) == 0){
-				Energy_data->Ampere = SCP_msg_var_int_send__value(Device->Cur_Packet);
-				return SCP_msg_Ok();
-
 	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"Current",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
 	printf("s5\n");
 	if(SCP_packet->Data.Message_type == msg_var_int_send){
@@ -101,19 +67,6 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 		SCR_load(&SCR_idle_screen);
 		PROCESS_EXIT();
 	}
-#else
-	Energy_data->Ampere = measure_data->Ampere = Power_data->Current_RMS;
-#endif
-
-
-
-#if 0
-			}else if(strncmp ( name, "Watt",4) == 0){
-				return SCP_msg_var_int_send(name, Power_data->Watt);
-			}else if(strncmp ( name, "Watt",4) == 0){
-				Energy_data->Power = SCP_msg_var_int_send__value(Device->Cur_Packet);
-				return SCP_msg_Ok();
-
 	printf("s6\n");
 	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"Watt",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
 	printf("s7\n");
@@ -124,17 +77,6 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 		SCR_load(&SCR_idle_screen);
 		PROCESS_EXIT();
 	}
-#else
-	Energy_data->Power = measure_data->Power = Power_data->Watt;
-#endif
-
-
-#ifdef ORIGINAL
-			}else if(strncmp ( name, "MaxWattHour",11) == 0){
-				return SCP_msg_var_int_send(name, Power_data->Watt_H_max);
-			}else if(strncmp ( name, "MaxWattHour",11) == 0){
-				Energy_data->MaxWH = SCP_msg_var_int_send__value(Device->Cur_Packet);
-				return SCP_msg_Ok();
 
 	printf("s8\n");
 	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"MaxWattHour",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
@@ -146,17 +88,6 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 		SCR_load(&SCR_idle_screen);
 		PROCESS_EXIT();
 	}
-#else
-	measure_data->MaxWH = Energy_data->MaxWH = Power_data->Watt_H_max;
-#endif
-
-
-#ifdef ORIGINAL
-			}else if(strncmp ( name, "CurrentWattHour",15) == 0){
-				return SCP_msg_var_int_send(name, Power_data->Watt_H);
-			}else if(strncmp ( name, "CurrentWattHour",14) == 0){
-				Energy_data->WH = SCP_msg_var_int_send__value(Device->Cur_Packet);
-				return SCP_msg_Ok();
 
 	printf("s10\n");
 	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"CurrentWattHour",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
@@ -168,9 +99,6 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 		SCR_load(&SCR_idle_screen);
 		PROCESS_EXIT();
 	}
-#else
-	measure_data->WH = Energy_data->WH =  Power_data->Watt_H;
-#endif
 
 	printf("s12\n");
 	Please_wait_screen(false);

@@ -28,6 +28,8 @@
 	extern int32_t g_price;
 	extern void printstackpointer(char * text);
 	extern uint16_t Server_prefix_nr;
+	extern Language_t g_Language;
+	extern int16_t g_Current_energy_point;
 
 #endif
 

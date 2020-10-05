@@ -4,13 +4,25 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
-../src/Screen/SCR_Idle.c 
+../src/Screen/SCR_Idle.c \
+../src/Screen/SCR_Language.c \
+../src/Screen/SCR_Overview.c \
+../src/Screen/SCR_Text.c \
+../src/Screen/SCR_pin.c 
 
 OBJS += \
-./src/Screen/SCR_Idle.o 
+./src/Screen/SCR_Idle.o \
+./src/Screen/SCR_Language.o \
+./src/Screen/SCR_Overview.o \
+./src/Screen/SCR_Text.o \
+./src/Screen/SCR_pin.o 
 
 C_DEPS += \
-./src/Screen/SCR_Idle.d 
+./src/Screen/SCR_Idle.d \
+./src/Screen/SCR_Language.d \
+./src/Screen/SCR_Overview.d \
+./src/Screen/SCR_Text.d \
+./src/Screen/SCR_pin.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes

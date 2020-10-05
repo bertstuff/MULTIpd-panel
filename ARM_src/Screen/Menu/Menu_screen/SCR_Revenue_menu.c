@@ -35,10 +35,10 @@ extern int32_t select_val;
 
 //--------------------------------------------exit handler------------------------------------------------------------//
 void SCR_daily_cash_register_handler(menu_handler_t event){
-	Transaction_info_t trans;
 	if(event == H_MENU_ACCEPT){
-		Transaction_get_devices(&trans);
-		Receipt_daily_cash_register_closure(&trans);
+		Devices_available_t Devices;
+		Devices_available(&Devices);
+		Receipt_daily_cash_register_closure(Devices);
 		CCV_increase_ShiftNumber();
 		g_trans_statistics.Cash_payed = 0;
 		g_trans_statistics.Coins_in_cash_box = 0;
@@ -96,32 +96,32 @@ PT_THREAD(SCR_statistics_handler(process_event_t ev, process_data_t data)){
 void SCR_statistics(bool enter_menu){
 	Point_t point = {.x=120,.y=5};
 	float Calc_price;
-	Transaction_info_t trans;
+	Devices_available_t Devices;
 
-	Transaction_get_devices(&trans);
+	Devices_available(&Devices);
 
 	Edip_Set_Font(&StdFont);
 	Edip_Clear_Display();
 	Edip_Draw_String(point,"%s: %d",GET_TEXT(S_Transactions), g_trans_statistics.Transactions);
-	if(trans.Coin_acceptor_available || trans.Coin_changer_available){
+	if(Devices.Coin_acceptor_available || Devices.Coin_changer_available){
 		point.y += 15;
 		Edip_Draw_String(point,"%s: %c%.2f",GET_TEXT(S_Coins_payed),C_EURO ,Centen_to_Euro(g_trans_statistics.Coins_payed));
-		if(trans.Coin_changer_available){
+		if(Devices.Coin_changer_available){
 			point.y += 15;
 			Edip_Draw_String(point,"%s: %c%.2f",GET_TEXT(S_Coins_returned),C_EURO ,Centen_to_Euro(g_trans_statistics.Coins_return));
 			point.y += 15;
 			Edip_Draw_String(point,"%s: %c%.2f",GET_TEXT(S_Coins_in_box),C_EURO ,Centen_to_Euro(g_trans_statistics.Coins_in_cash_box * CoinSF));
 		}
 	}
-	if(trans.Cash_available){
+	if(Devices.Cash_available){
 		point.y += 15;
 		Edip_Draw_String(point,"%s: %c%.2f",GET_TEXT(S_Cash_payed),C_EURO ,Centen_to_Euro(g_trans_statistics.Cash_payed));
 	}
-	if(trans.Payter_available || trans.ATM_available){
+	if(Devices.Payter_available || Devices.ATM_available){
 		point.y += 15;
 		Edip_Draw_String(point,"%s: %c%.2f",GET_TEXT(S_Debit_card_payed),C_EURO ,Centen_to_Euro(g_trans_statistics.Debit_card_payed));
 	}
-	if(trans.Multipass_available){
+	if(Devices.Multipass_available){
 		point.y += 15;
 		Edip_Draw_String(point,"%s: %c%.2f",GET_TEXT(S_Multipass_payed),C_EURO ,Centen_to_Euro(g_trans_statistics.Multipass_payed));
 	}

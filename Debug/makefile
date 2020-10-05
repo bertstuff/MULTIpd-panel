@@ -31,13 +31,14 @@ RM := rm -rf
 -include ARM_src/Device/I2C/RFID/subdir.mk
 -include ARM_src/Device/I2C/MAX128/subdir.mk
 -include ARM_src/Device/I2C/LV3095/subdir.mk
+-include ARM_src/Device/I2C/LCD_Alphanumeric/subdir.mk
 -include ARM_src/Device/I2C/IO_4Bit/subdir.mk
 -include ARM_src/Device/I2C/Edip_240B/subdir.mk
 -include ARM_src/Device/I2C/EMP_800/subdir.mk
 -include ARM_src/Device/I2C/BUTTONS/subdir.mk
 -include ARM_src/Device/I2C/9554/subdir.mk
 -include ARM_src/Device/I2C/8574/subdir.mk
--include ARM_src/Device/Common/LCD_16x2/subdir.mk
+-include ARM_src/Device/subdir.mk
 -include ARM_src/Core/protocol/Secure/sha1/subdir.mk
 -include ARM_src/Core/protocol/Secure/aes/subdir.mk
 -include ARM_src/Core/protocol/Net/ntp/subdir.mk

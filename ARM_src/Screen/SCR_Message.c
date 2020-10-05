@@ -7,6 +7,7 @@
 #include <Core/Timer/etimer.h>
 #include <Core/Thread/pt.h>
 #include <Device/I2C/Edip_240B/EDIP_240B.h>
+#include <Device/I2C/LCD_Alphanumeric/LCD_Alphanumeric.h>
 
 /*prototype*/
 void SCR_Message(char * message);
@@ -50,14 +51,17 @@ void SCR_Message(char * message){
 		Edip_Set_Font(&StdFont);
 		Edip_Draw_String(point,message);
 		break;
+	case SCR_LCD_2X12:
 	case SCR_LCD_2X16:
 		point.x = 0;
 		point.y = 0;
-		LCD_2x16_Clear_Display();
-		LCD_2x16_Draw_String(point,message);
+		LCD_Alphanumeric_Clear_Display();
+		LCD_Alphanumeric_Draw_String(point,message);
 		break;
 	case SCR_PC:
 		printf("SCR_PC:[msg] %s\r\n",message);
+		break;
+	case SCR_NONE:
 		break;
 	}
 	return;
@@ -65,6 +69,42 @@ void SCR_Message(char * message){
 
 ////////////////wait screen////////////////////////
 PROCESS(SCR_Wait_screen, "Wait screen");
+
+char * SCR_bussy_symbol(void){
+	static uint8_t bussy_counter;
+
+	bussy_counter++;
+	switch(bussy_counter-1){
+		case 12: bussy_counter = 0;
+		case 0:
+		return"....   ";
+		break;
+		case 11:
+		case 1:
+		return"... .  ";
+		break;
+		case 10:
+		case 2:
+		return".. . . ";
+		break;
+		case 9:
+		case 3:
+		return". . . .";
+		break;
+		case 8:
+		case 4:
+		return" . . ..";
+		break;
+		case 7:
+		case 5:
+		return"  . ...";
+		break;
+		case 6:
+		return"   ....";
+		break;
+	}
+	return "";
+}
 
 void SCR_bussy_bar(void){
 	static uint8_t bussy_counter;
@@ -74,55 +114,19 @@ void SCR_bussy_bar(void){
 		point.x = 120;
 		point.y = 60;
 		Edip_Set_Font(&H1Font);
-		switch(bussy_counter){
-		case 12: bussy_counter = 0;
-		case 0: Edip_Draw_String(point,"....   ");
-		break;
-		case 11:
-		case 1: Edip_Draw_String(point,"... .  ");
-		break;
-		case 10:
-		case 2: Edip_Draw_String(point,".. . . ");
-		break;
-		case 9:
-		case 3: Edip_Draw_String(point,". . . .");
-		break;
-		case 8:
-		case 4: Edip_Draw_String(point," . . ..");
-		break;
-		case 7:
-		case 5: Edip_Draw_String(point,"  . ...");
-		break;
-		case 6: Edip_Draw_String(point,"   ....");
-		break;
-		}
+		Edip_Draw_String(point,SCR_bussy_symbol());
 	}
 
 	if(g_screen_type == SCR_LCD_2X16){
 		point.x = 4;
 		point.y = 1;
-		switch(bussy_counter){
-		case 12: bussy_counter = 0;
-		case 0: LCD_2x16_Draw_String(point,"....   ");
-		break;
-		case 11:
-		case 1: LCD_2x16_Draw_String(point,"... .  ");
-		break;
-		case 10:
-		case 2: LCD_2x16_Draw_String(point,".. . . ");
-		break;
-		case 9:
-		case 3: LCD_2x16_Draw_String(point,". . . .");
-		break;
-		case 8:
-		case 4: LCD_2x16_Draw_String(point," . . ..");
-		break;
-		case 7:
-		case 5: LCD_2x16_Draw_String(point,"  . ...");
-		break;
-		case 6: LCD_2x16_Draw_String(point,"   ....");
-		break;
-		}
+		LCD_Alphanumeric_Draw_String(point,SCR_bussy_symbol());
+	}
+
+	if(g_screen_type == SCR_LCD_2X12){
+		point.x = 2;
+		point.y = 1;
+		LCD_Alphanumeric_Draw_String(point,SCR_bussy_symbol());
 	}
 
 	bussy_counter++;
@@ -143,10 +147,18 @@ void SCR_please_wait(void){
 	if(g_screen_type == SCR_LCD_2X16){
 		point.x = 0;
 		point.y = 0;
-		LCD_2x16_Clear_Display();
+		LCD_Alphanumeric_Clear_Display();
 		point.x = (16-strlen(GET_TEXT(S_Please_wait)))/2;
-		LCD_2x16_Draw_String(point,GET_TEXT(S_Please_wait));
+		LCD_Alphanumeric_Draw_String(point,GET_TEXT(S_Please_wait));
 	}
+
+	if(g_screen_type == SCR_LCD_2X12){
+			point.x = 0;
+			point.y = 0;
+			LCD_Alphanumeric_Clear_Display();
+			point.x = (12-strlen(GET_TEXT(S_Please_wait)))/2;
+			LCD_Alphanumeric_Draw_String(point,GET_TEXT(S_Please_wait));
+		}
 
 	if(g_screen_type == SCR_PC){
 		printf("SCR_PC:[msg] please wait");

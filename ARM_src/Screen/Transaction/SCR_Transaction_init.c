@@ -20,78 +20,18 @@ extern int32_t g_max_change_value;
 extern bool g_bill_accept[4];
 extern int32_t g_min_change_level[4];
 
-extern Transaction_info_t trans;
+void Transaction_read_settings(Transaction_info_t * trans);
 
-void Transaction_init(void){
-	//Transaction_info_t trans;
-	UART_select_t uart;
-
+void Transaction_init(Transaction_info_t * trans){
 	Transaction_statistics_load();
-	Transaction_get_devices(&trans);
-	Transaction_read_settings(&trans);
-	if(trans.ATM_available){
-		printf("transaction: ATM available\r\n");
-		CCV_init();
-	}
-
-	if(trans.Cash_available){
-		printf("transaction: Cash available\r\n");
-		uart = ini_getuart("Cash_validator","Uart", "Basis_EBM_COM1", "Select uart for Cash validator", inifile_device);
-		XBA_init(uart);
-	}
-
-	if(trans.Coin_changer_available){
-		printf("transaction: Coin changer available\r\n");
-		uart = ini_getuart("MDB","Uart", "Basis_EBM_COM2", "Select uart for DMX", inifile_device);
-		MDB_init(uart);
-	}
-
-	if(trans.Payter_available){
-		printf("transaction: payter available\r\n");
-		RTP_init();
-	}
-
-	if(trans.Printer_available){
-		printf("transaction: printer available\r\n");
-		uart = ini_getuart("Receipt_Printer","Uart", "I2C_UART1", "Select uart for printer", inifile_device);
-		TG2460H_Init(uart);
-		Receipt_init();
-	}
-
-	if(trans.QR_available){
-		printf("transaction: QR available\r\n");
-		QR_init(false);
-	}
-
-	if(trans.Multipass_available == true){
-		printf("transaction: RFID available\r\n");
-		g_RFID_card = RFID_get_card(RFID_init(0,READER_MIFARE));
-		if(trans.Multipass_offline == true){
-			g_RFID_card = RFID_get_card(RFID_get_reader(0x00));
-			g_RFID_card->card_action.Credit_read = true;
-			g_RFID_card->card_action.Info_read = true;
-			g_RFID_card->card_action.Unlock_code_read = true;
-		}
-	}
-
-	if(trans.Coin_acceptor_available){
-		printf("transaction: coin acceptor available\r\n");
-		EMP_800_init();
-	}
-
-	if(trans.EltraRFID_available){
-		printf("transaction: Eltra available\r\n");
-		uart = ini_getuart("Eltra","Uart", "Basis_EBM_COM2", "Select uart for printer", inifile_device);
-		ELTRA_init(uart);
-	}
-	if(trans.Payter_available || trans.ATM_available){
-		process_start(&EJournal_process,NULL);
-	}
+	Devices_available(&trans->Device_available);
+	Transaction_read_settings(trans);
 	return;
 }
 
 void Transaction_read_settings(Transaction_info_t * trans){
-	if(trans->Cash_available){
+#if (DEVICE_CASH == 1)
+	if(trans->Device_available.Cash_available){
 		g_min_change_level[0] = ini_getl("Bill accept","5euro_Change_level",500,"Change level for accepting 5euro bill",inifile_machine);
 		g_min_change_level[1] = ini_getl("Bill accept","10euro_Change_level",1000,"Change level for accepting 10 euro bill",inifile_machine);
 		g_min_change_level[2] = ini_getl("Bill accept","20euro_Change_level",2000,"Change level for accepting 20 euro bill",inifile_machine);
@@ -104,22 +44,6 @@ void Transaction_read_settings(Transaction_info_t * trans){
 		g_bill_accept[2] = ini_getbool("Bill accept","20euro_Accept",true,"Accept 20 euro bill" ,inifile_machine);
 		g_bill_accept[3] = ini_getbool("Bill accept","50euro_Accept",false,"Accept 50 euro bill" ,inifile_machine);
 	}
-}
-
-void Transaction_get_devices(Transaction_info_t * trans){
-	trans->Payter_available = ini_getbool("Device","PayMate_available",false,"PayMate available:",inifile_device);
-	trans->Cash_available = ini_getbool("Device","Cash_available",false,"Cash available:",inifile_device);
-	trans->Coin_changer_available = ini_getbool("Device","Coin_changer_available",false,"Coin available:",inifile_device);
-	trans->Coin_acceptor_available = ini_getbool("Device","Coin_acceptor_available",false,"Coin available:",inifile_device);
-	trans->ATM_available = ini_getbool("Device","ATM_available",false,"ATM available:",inifile_device);
-	trans->Multipass_available = ini_getbool("Device","Multipass_available",false,"Multipass available:",inifile_device);
-	if(trans->Multipass_available == true){
-		trans->Multipass_online = ini_getbool("Multipass","Multipass_Online",true,"Multipass online:",inifile_device);
-		trans->Multipass_offline = ini_getbool("Multipass","Multipass_Offline",false,"Multipass offline:",inifile_device);
-	}
-	trans->EltraRFID_available = ini_getbool("Device","EltraRFID_available",false,"EltraRFID available:",inifile_device);
-	trans->QR_available = ini_getbool("Device","QR_available",false,"QR available:",inifile_device);
-	trans->Printer_available = ini_getbool("Device","Printer_available",false,"Printer available:",inifile_device);
-	return;
+#endif
 }
 #endif

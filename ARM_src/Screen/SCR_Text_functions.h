@@ -4,10 +4,13 @@
 	#include <Core/Type/type.h>
 
 	typedef enum{
-		SCR_EDIP = 0,
-		SCR_LCD_2X16 = 1,
-		SCR_PC = 2,
+		SCR_NONE = 0,
+		SCR_EDIP = 1,
+		SCR_LCD_2X16 = 2,
+		SCR_PC = 3,
+		SCR_LCD_2X12 = 4,
 	}Screen_t;
+
 	extern Screen_t g_screen_type;
 	//#include "Global.h"
 	#include <Core/Extensions/ini/minIni.h>

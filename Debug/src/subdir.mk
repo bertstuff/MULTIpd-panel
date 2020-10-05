@@ -4,6 +4,8 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../src/Energy_point.c \
+../src/MULTIpd_main_process.c \
 ../src/Power.c \
 ../src/SCP_handler.c \
 ../src/Terminal_functions.c \
@@ -13,6 +15,8 @@ C_SRCS += \
 ../src/version.c 
 
 OBJS += \
+./src/Energy_point.o \
+./src/MULTIpd_main_process.o \
 ./src/Power.o \
 ./src/SCP_handler.o \
 ./src/Terminal_functions.o \
@@ -22,6 +26,8 @@ OBJS += \
 ./src/version.o 
 
 C_DEPS += \
+./src/Energy_point.d \
+./src/MULTIpd_main_process.d \
 ./src/Power.d \
 ./src/SCP_handler.d \
 ./src/Terminal_functions.d \

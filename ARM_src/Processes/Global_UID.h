@@ -6,6 +6,7 @@
 typedef enum{
 	RFID_UID,
 	QR_UID,
+	PIN_UID,
 	NONE_UID = 255
 }UID_type_t;
 

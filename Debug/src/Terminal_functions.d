@@ -5,6 +5,7 @@ src/Terminal_functions.o src/Terminal_functions.d: \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/pt.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc-switch.h \
+ D:\ARM\MULTIpd_software\Multipd\src/States.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_msg.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_Comm.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_types.h \
@@ -44,6 +45,8 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/pt.h:
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Thread/lc-switch.h:
+
+D:\ARM\MULTIpd_software\Multipd\src/States.h:
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_msg.h:
 

@@ -4,19 +4,13 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
-../ARM_src/Device/I2C/BUTTONS/Buttons_3x4.c \
-../ARM_src/Device/I2C/BUTTONS/Keypad_3x4.c \
-../ARM_src/Device/I2C/BUTTONS/Keypad_Parser.c 
+../ARM_src/Device/I2C/BUTTONS/Buttons_3x4.c 
 
 OBJS += \
-./ARM_src/Device/I2C/BUTTONS/Buttons_3x4.o \
-./ARM_src/Device/I2C/BUTTONS/Keypad_3x4.o \
-./ARM_src/Device/I2C/BUTTONS/Keypad_Parser.o 
+./ARM_src/Device/I2C/BUTTONS/Buttons_3x4.o 
 
 C_DEPS += \
-./ARM_src/Device/I2C/BUTTONS/Buttons_3x4.d \
-./ARM_src/Device/I2C/BUTTONS/Keypad_3x4.d \
-./ARM_src/Device/I2C/BUTTONS/Keypad_Parser.d 
+./ARM_src/Device/I2C/BUTTONS/Buttons_3x4.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes

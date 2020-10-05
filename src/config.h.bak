@@ -7,8 +7,8 @@
   #define MINOR_VERSION 1
   #define PRODUCTNR "00000"
 
-  #define BOARD_SCREEN 1
-  #define PAYING_MODULE 0
+  #define BOARD_SCREEN 0
+
   #define BOARD_LED1_PORT 1
   #define BOARD_LED2_PORT 1
   #define BOARD_LED1_PIN (1<<23)

@@ -108,14 +108,14 @@ PT_THREAD(reservation_transaction(Transaction_info_t * trans, process_event_t ev
 
 		SCR_reservation_present(trans);
 
-		if(trans->QR_available){
+		if(trans->Device_available.QR_available){
 			QR_enable(true);
 		}
 
 		//--get RFID or QR
 		while(1){
 			//--QR-code--
-			if(trans->QR_available){
+			if(trans->Device_available.QR_available){
 				if(ev == event_QR_present){
 					SET_SCREEN_TIMEOUT(60);
 					Please_wait_screen(true);
@@ -181,7 +181,7 @@ PT_THREAD(reservation_transaction(Transaction_info_t * trans, process_event_t ev
 			}
 
 
-			if(trans->Multipass_available){
+			if(trans->Device_available.Multipass_available){
 				if((ev == event_card_change)||(ev == PROCESS_EVENT_INIT)){
 					SET_SCREEN_TIMEOUT(60);
 					g_RFID_card = RFID_get_card(RFID_get_reader(0x00));
@@ -350,8 +350,8 @@ void SCR_reservation_present(Transaction_info_t * trans){
 	Edip_Set_Font(&StdFont);
 	point.x = 120;
 	point.y = 30;
-	if(trans->Multipass_available){
-		if(trans->QR_available){
+	if(trans->Device_available.Multipass_available){
+		if(trans->Device_available.QR_available){
 			Edip_Draw_String(point,GET_TEXT(S_Scan_Multipass_QR));
 		}else{
 			Edip_Draw_String(point,GET_TEXT(S_Scan_Multipass));

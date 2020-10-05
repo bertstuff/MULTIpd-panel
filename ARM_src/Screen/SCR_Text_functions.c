@@ -15,6 +15,9 @@ bool lanuage_exsist(Screen_t Screen_type, Language_t language){
 
 	FIL fp;
 	switch(Screen_type){
+	case SCR_LCD_2X12:
+		strcat(Filename,"2x12_");
+		break;
 	case SCR_LCD_2X16:
 		strcat(Filename,"2x16_");
 		break;

@@ -39,19 +39,21 @@ int16_t SCP_array_number(char * Name){
 
 /*1-msg_RFID_Present*/
 /*401-msg_QR_present*/
-SCP_Data_t SCP_msg_Present(UID_t UID, uint8_t machine_type){
+SCP_Data_t SCP_msg_Present(UID_t UID, msg_Value_t Value_Type, uint16_t Value){
 	SCP_Data_t Packet;
 	if(UID.type == RFID_UID){
 		Packet.Message_type = msg_RFIDPresent;
 	}else if(UID.type == QR_UID){
 		Packet.Message_type = msg_QR_present;
+	}else if(UID.type == PIN_UID){
+		Packet.Message_type = msg_PIN_present;
 	}else{
 		Packet = SCP_msg_Error();
 		return Packet;
 	}
 	memmove(Packet.UID,UID.UID,7);
-	Packet.Value[0] = 0;
-	Packet.Value[1] = machine_type;
+	Packet.Value[0] = Value_Type;
+	Packet.Value[1] = Value;
 	Packet.Text = NULL;
 	return Packet;
 }
@@ -65,6 +67,8 @@ SCP_Data_t SCP_msg_BijEuro(UID_t UID,int32_t Centen_Bij,msg_Reason_t Reason){
 		Packet.Message_type = msg_RFID_BijEuro;
 	}else if(UID.type == QR_UID){
 		Packet.Message_type = msg_QR_BijEuro;
+	}else if(UID.type == PIN_UID){
+		Packet.Message_type = msg_PIN_BijEuro;
 	}else{
 		Packet = SCP_msg_Error();
 		return Packet;
@@ -84,6 +88,8 @@ SCP_Data_t SCP_msg_AfEuro(UID_t UID,int32_t Centen_af){
 		Packet.Message_type = msg_RFID_AfEuro;
 	}else if(UID.type == QR_UID){
 		Packet.Message_type = msg_QR_AfEuro;
+	}else if(UID.type == PIN_UID){
+		Packet.Message_type = msg_PIN_AfEuro;
 	}else{
 		Packet = SCP_msg_Error();
 		return Packet;
@@ -103,6 +109,8 @@ SCP_Data_t SCP_msg_MeldEuro(UID_t UID){
 		Packet.Message_type = msg_RFID_MeldEuro;
 	}else if(UID.type == QR_UID){
 		Packet.Message_type = msg_QR_MeldEuro;
+	}else if(UID.type == PIN_UID){
+			Packet.Message_type = msg_PIN_MeldEuro;
 	}else{
 		Packet = SCP_msg_Error();
 		return Packet;
@@ -147,6 +155,8 @@ SCP_Data_t SCP_msg_Betaald(UID_t UID, int32_t Centen){
 		Packet.Message_type = msg_RFID_Betaald;
 	}else if(UID.type == QR_UID){
 		Packet.Message_type = msg_QR_Betaald;
+	}else if(UID.type == PIN_UID){
+		Packet.Message_type = msg_PIN_Betaald;
 	}else if(UID.type == NONE_UID){
 		Packet.Message_type = msg_Betaald;
 	}else{
@@ -211,6 +221,8 @@ SCP_Data_t SCP_msg_Language(UID_t UID, Language_t language){
 		Packet.Message_type = msg_RFID_Language;
 	}else if(UID.type == QR_UID){
 		Packet.Message_type = msg_QR_Language;
+	}else if(UID.type == PIN_UID){
+		Packet.Message_type = msg_PIN_Language;
 	}else{
 		Packet = SCP_msg_Error();
 		return Packet;
@@ -604,6 +616,8 @@ SCP_Data_t SCP_msg_ReserveringBooked(UID_t UID, uint16_t min, uint8_t machine_ty
 		Packet.Message_type = msg_RFID_ReserveringBooked;
 	}else if(UID.type == QR_UID){
 		Packet.Message_type = msg_QR_ReserveringBooked;
+	}else if(UID.type == PIN_UID){
+		Packet.Message_type = msg_PIN_ReserveringBooked;
 	}else if(UID.type == NONE_UID){
 		Packet.Message_type = msg_ReserveringBooked;
 	}else{
@@ -622,7 +636,7 @@ int32_t SCP_msg_ReserveringBooked__ResvNr(SCP_pack_t * Packet){
 }
 
 /* 228-msg_ReserveringMachine*/
-SCP_Data_t SCP_msg_ReserveringMachine(uint16_t Machine){
+SCP_Data_t SCP_msg_ReserveringMachine(uint8_t Machine){
 	SCP_Data_t Packet;
 	Packet.Message_type = msg_ReserveringMachine;
 	memset(Packet.UID,0,7);
@@ -824,6 +838,8 @@ SCP_Data_t SCP_msg_PoortOpen(UID_t UID, uint16_t poort){
 	if(UID.type == RFID_UID){
 		Packet.Message_type = msg_RFID_PoortOpen;
 	}else if(UID.type == QR_UID){
+		Packet.Message_type = msg_QR_PoortOpen;
+	}else if(UID.type == PIN_UID){
 		Packet.Message_type = msg_QR_PoortOpen;
 	}else{
 		Packet = SCP_msg_Error();
