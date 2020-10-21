@@ -69,7 +69,7 @@ src/Screen/SCR_pin.o src/Screen/SCR_pin.d: ../src/Screen/SCR_pin.c \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Extensions/code/access_code.h \
  D:\ARM\MULTIpd_software\Multipd\src/Energy_point.h \
  D:\ARM\MULTIpd_software\Multipd\src/States.h \
- ../src/Screen/SCR_Overview.h
+ ../src/Screen/SCR_Overview.h D:\ARM\MULTIpd_software\Multipd\src/Power.h
 
 ../src/Screen/SCR_Idle.h:
 
@@ -212,3 +212,5 @@ D:\ARM\MULTIpd_software\Multipd\src/Energy_point.h:
 D:\ARM\MULTIpd_software\Multipd\src/States.h:
 
 ../src/Screen/SCR_Overview.h:
+
+D:\ARM\MULTIpd_software\Multipd\src/Power.h:

@@ -36,6 +36,7 @@ PROCESS_THREAD(SCR_idle_screen, ev, data)
 
 	PROCESS_BEGIN();
 	etimer_set(&poll_tm,CLOCK_SECOND);
+	Energy_point_create_all();
 	g_Current_energy_point = 0;
 	SCR_idle();
 	Button3x4_activate(true);

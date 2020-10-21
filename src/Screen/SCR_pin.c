@@ -15,6 +15,9 @@
 #include <Core/Extensions/code/access_code.h>
 #include "Energy_point.h"
 #include "SCR_Overview.h"
+#include "Power.h"
+
+struct timer Reservation_tm;
 
 uint8_t input_lenght = 0;
 uint8_t input_pos = 0;
@@ -74,15 +77,20 @@ PROCESS_THREAD(SCR_Pin_screen, ev, data)
 						}
 						Please_wait_screen(true);
 						PROCESS_PT_SCP_MSG_PRESENT(&SCP_packet,g_Cur_UID,VAL_MACHINE_NR,Server_prefix_nr + g_Current_energy_point);
+						Please_wait_screen(false);
 						input_pos = 0;
 						if(SCP_packet->Data.Message_type == msg_Akkoord){
+							int i;
 							memset(g_Cur_UID.UID,0xC,7);
 							input_pos = 0;
-							PROCESS_PT_SCP_MSG_VAR_INT_SEND(&SCP_packet, SCP_varname_array(name_buffer,"State",g_Current_energy_point), 1, Energy_point_device(g_Current_energy_point));
-							if(SCP_packet->Data.Message_type == msg_Ok){
-								measure_data = Energy_point_data(g_Current_energy_point);
-								measure_data->State = 1;
+							Power_point_data_t * Power_data = Get_Energy_point_data(Server_prefix_nr + g_Current_energy_point);
+							timer_set(&Reservation_tm,CLOCK_SECOND);
+							for(i = 0;i<8;i++){
+								g_Mdata[i].refresh_reservation = true;
 							}
+							power_enable(Power_data->Number);
+							measure_data = Energy_point_data(g_Current_energy_point);
+							measure_data->State = 1;
 							SCR_load(&SCR_Overview_screen);
 							PROCESS_EXIT();
 						}else if(SCP_packet->Data.Message_type == msg_NietAkkoord){

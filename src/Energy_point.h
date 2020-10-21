@@ -64,4 +64,7 @@ Energy_point_data_t * Energy_point_data(uint8_t Energy_point_nr);
  */
 struct Energy_point_t * Energy_point_loop(struct Energy_point_t * Energy_point);
 
+void Energy_point_create_all();
+
+
 #endif//__ENERGY_POINT_H__

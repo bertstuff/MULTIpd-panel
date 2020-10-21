@@ -67,7 +67,8 @@ src/Screen/SCR_Overview.o src/Screen/SCR_Overview.d: \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Device/I2C/BUTTONS/Buttons_3x4.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Screen/SCR_Message.h \
  D:\ARM\MULTIpd_software\Multipd\src/Energy_point.h \
- D:\ARM\MULTIpd_software\Multipd\src/States.h ../src/Screen/SCR_pin.h
+ D:\ARM\MULTIpd_software\Multipd\src/States.h ../src/Screen/SCR_pin.h \
+ D:\ARM\MULTIpd_software\Multipd\src/Power.h
 
 ../src/Screen/SCR_Idle.h:
 
@@ -208,3 +209,5 @@ D:\ARM\MULTIpd_software\Multipd\src/Energy_point.h:
 D:\ARM\MULTIpd_software\Multipd\src/States.h:
 
 ../src/Screen/SCR_pin.h:
+
+D:\ARM\MULTIpd_software\Multipd\src/Power.h:

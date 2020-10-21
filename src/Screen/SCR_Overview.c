@@ -14,6 +14,7 @@
 #include <string.h>
 #include "Energy_point.h"
 #include "SCR_pin.h"
+#include "Power.h"
 
 /*prototype*/
 PROCESS(SCR_Overview_screen, "Overview screen");
@@ -36,72 +37,23 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 	PROCESS_BEGIN();
 	etimer_set(&poll_tm,CLOCK_SECOND);
 
-	Please_wait_screen(true);
-	printf("Wait screen present\n");
-	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"State",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
-	printf("s1\n");
-	if(SCP_packet->Data.Message_type == msg_var_int_send){
-		measure_data = Energy_point_data(g_Current_energy_point);
-		measure_data->State = SCP_msg_var_int_send__value(SCP_packet);
-	}else{
-		SCR_load(&SCR_idle_screen);
-		PROCESS_EXIT();
-	}
-	printf("s2\n");
-	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"MaxCurrent",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
-	printf("s3\n");
-	if(SCP_packet->Data.Message_type == msg_var_int_send){
-		measure_data = Energy_point_data(g_Current_energy_point);
-		measure_data->MaxAmpere = SCP_msg_var_int_send__value(SCP_packet);
-	}else{
-		SCR_load(&SCR_idle_screen);
-		PROCESS_EXIT();
-	}
-	printf("s4\n");
-	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"Current",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
-	printf("s5\n");
-	if(SCP_packet->Data.Message_type == msg_var_int_send){
-		measure_data = Energy_point_data(g_Current_energy_point);
-		measure_data->Ampere = SCP_msg_var_int_send__value(SCP_packet);
-	}else{
-		SCR_load(&SCR_idle_screen);
-		PROCESS_EXIT();
-	}
-	printf("s6\n");
-	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"Watt",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
-	printf("s7\n");
-	if(SCP_packet->Data.Message_type == msg_var_int_send){
-		measure_data = Energy_point_data(g_Current_energy_point);
-		measure_data->Power = SCP_msg_var_int_send__value(SCP_packet);
-	}else{
-		SCR_load(&SCR_idle_screen);
-		PROCESS_EXIT();
-	}
+//	Please_wait_screen(true);
+//	printf("Wait screen present\n");
 
-	printf("s8\n");
-	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"MaxWattHour",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
-	printf("s9\n");
-	if(SCP_packet->Data.Message_type == msg_var_int_send){
-		measure_data = Energy_point_data(g_Current_energy_point);
-		measure_data->MaxWH = SCP_msg_var_int_send__value(SCP_packet);
-	}else{
-		SCR_load(&SCR_idle_screen);
-		PROCESS_EXIT();
+	Power_point_data_t * Power_data = Get_Energy_point_data(g_Current_energy_point);
+	if(Power_data == NULL){
+//		return SCP_msg_Error();
 	}
+	measure_data = Energy_point_data(g_Current_energy_point);
 
-	printf("s10\n");
-	PROCESS_PT_SCP_MSG_VAR_INT_REQUEST(&SCP_packet, SCP_varname_array(name_buffer,"CurrentWattHour",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
-	printf("s11\n");
-	if(SCP_packet->Data.Message_type == msg_var_int_send){
-		measure_data = Energy_point_data(g_Current_energy_point);
-		measure_data->WH = SCP_msg_var_int_send__value(SCP_packet);
-	}else{
-		SCR_load(&SCR_idle_screen);
-		PROCESS_EXIT();
-	}
+	measure_data->State = Power_data->State;
+	measure_data->MaxAmpere = Power_data->Current_max;
+	measure_data->Ampere = Power_data->Current_RMS;
+	measure_data->Power = Power_data->Watt;
+	measure_data->MaxWH = Power_data->Watt_H_max;
+	measure_data->WH = Power_data->Watt_H;
 
-	printf("s12\n");
-	Please_wait_screen(false);
+//	Please_wait_screen(false);
 	SCR_Overview(true,measure_data);
 	SET_SCREEN_TIMEOUT(30);
 	etimer_set(&refresh_tm,CLOCK_SECOND*5);
@@ -110,13 +62,27 @@ PROCESS_THREAD(SCR_Overview_screen, ev, data)
 
 		if(etimer_expired(&refresh_tm)){
 			etimer_set(&refresh_tm,CLOCK_SECOND*5);
+			Power_point_data_t * Power_data = Get_Energy_point_data(g_Current_energy_point);
+			if(Power_data == NULL){
+		//		return SCP_msg_Error();
+			}
+			measure_data = Energy_point_data(g_Current_energy_point);
+
+			measure_data->State = Power_data->State;
+			measure_data->MaxAmpere = Power_data->Current_max;
+			measure_data->Ampere = Power_data->Current_RMS;
+			measure_data->Power = Power_data->Watt;
+			measure_data->MaxWH = Power_data->Watt_H_max;
+			measure_data->WH = Power_data->Watt_H;
+			/*
 			BUFFER_SCP_MSG_VAR_INT_REQUEST(SCP_varname_array(name_buffer,"State",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
 			BUFFER_SCP_MSG_VAR_INT_REQUEST(SCP_varname_array(name_buffer,"MaxCurrent",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
 			BUFFER_SCP_MSG_VAR_INT_REQUEST(SCP_varname_array(name_buffer,"Current",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
 			BUFFER_SCP_MSG_VAR_INT_REQUEST(SCP_varname_array(name_buffer,"Watt",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
 			BUFFER_SCP_MSG_VAR_INT_REQUEST(SCP_varname_array(name_buffer,"MaxWattHour",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
 			BUFFER_SCP_MSG_VAR_INT_REQUEST(SCP_varname_array(name_buffer,"CurrentWattHour",g_Current_energy_point), Energy_point_device(g_Current_energy_point));
-			measure_data = Energy_point_data(g_Current_energy_point);
+			*/
+			//measure_data = Energy_point_data(g_Current_energy_point);
 			SCR_Overview(false,measure_data);
 		}
 

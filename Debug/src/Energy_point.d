@@ -33,7 +33,7 @@ src/Energy_point.o src/Energy_point.d: ../src/Energy_point.c \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/protocol/Net/SCP/SCP_msg.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/core/Timer/timer.h \
  D:\ARM\MULTIpd_software\Multipd\ARM_src/Processes/Global_UID.h \
- ../src/Energy_point.h ../src/States.h
+ ../src/Energy_point.h ../src/States.h ../src/Power.h
 
 D:\ARM\MULTIpd_software\Multipd\ARM_src/Core/Memory/cmem.h:
 
@@ -106,3 +106,5 @@ D:\ARM\MULTIpd_software\Multipd\ARM_src/Processes/Global_UID.h:
 ../src/Energy_point.h:
 
 ../src/States.h:
+
+../src/Power.h:

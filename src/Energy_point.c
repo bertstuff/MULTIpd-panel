@@ -8,6 +8,7 @@
 #include <Core/protocol/Net/SCP/SCP_msg.h>
 #include <Core/protocol/Net/SCP/SCP_Comm.h>
 #include "Energy_point.h"
+#include "Power.h"
 
 LIST(Energy_point_list);
 PROCESS(Energy_point_process, "Energy point process");
@@ -17,6 +18,21 @@ void Energy_point_init(void){
 	event_state_update = process_alloc_event(); //Claim a event number
 	list_init(Energy_point_list);
 	process_start(&Energy_point_process, NULL);
+}
+
+void Energy_point_create_all()
+{
+	int i;
+
+	for(i=0; i<8 ; i++){
+		if(g_Mdata[i].Number != 0){
+			SCP_DevInfo_t devinf = SCP_Get_device_info();
+			struct Energy_point_t Energy_point;
+			Energy_point.device = devinf.SCP_devID;
+			Energy_point.number = g_Mdata[i].Number;
+			Energy_point_new(Energy_point);
+		}
+	}
 }
 
 void Energy_point_new(struct Energy_point_t Energy_point){
