@@ -183,6 +183,15 @@ PROCESS_THREAD(SCR_idle_screen, ev, data)
 										BUFFER_SCP_MSG_VAR_INT_SEND(SCP_varname_array(varname_buffer,"State",g_Mdata[i].Number), g_Mdata[i].State, Devices_list[j-1]);
 									}
 								}
+							} else {
+								if(g_Mdata[i].State == ST_NO_KWH_LEFT){
+									power_enable(g_Mdata[i].Number);
+									printf("MULTIpd: kw added %d\r\n",i+1);
+									for(j = SCP_Devices_of_types(Devices_list, 5, 1, MULTIPD_PANEL); j > 0 ; j--){
+										BUFFER_SCP_MSG_VAR_INT_SEND(SCP_varname_array(varname_buffer,"State",g_Mdata[i].Number), g_Mdata[i].State, Devices_list[j-1]);
+									}
+								}
+
 							}
 						}
 					}
