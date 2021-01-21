@@ -4,7 +4,7 @@
 #include <Core/Timer/etimer.h>
 #include <Driver/include/lpc17xx_adc.h>
 #include <Driver/include/lpc17xx_pinsel.h>
-#include <core/Extensions/ini/minIni.h>
+//#include <core/Extensions/ini/minIni.h>
 #include <Driver/include/lpc17xx_gpio.h>
 #include <math.h>
 #include <Core/Memory/memb.h>
