@@ -37,12 +37,14 @@ ARM_src/Device/I2C/SC16IS740 \
 ARM_src/Device/I2C/RFID \
 ARM_src/Device/I2C/MAX128 \
 ARM_src/Device/I2C/LV3095 \
+ARM_src/Device/I2C/LCD_Alphanumeric \
 ARM_src/Device/I2C/IO_4Bit \
 ARM_src/Device/I2C/Edip_240B \
 ARM_src/Device/I2C/EMP_800 \
 ARM_src/Device/I2C/BUTTONS \
 ARM_src/Device/I2C/9554 \
 ARM_src/Device/I2C/8574 \
+ARM_src/Device \
 ARM_src/Device/Common/LCD_16x2 \
 ARM_src/Core/protocol/Secure/sha1 \
 ARM_src/Core/protocol/Secure/aes \

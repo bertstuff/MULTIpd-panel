@@ -62,8 +62,8 @@ SysTick_Handler(void)
   }
 
 #if (BOARD_SD_CARD == 1)
-  MMC_disk_timerproc(); /* Disk timer function (100Hz) */
 #endif
+  MMC_disk_timerproc(); /* Disk timer function (100Hz) */
   
   if (--second_countdown == 0) {
     current_seconds++;
