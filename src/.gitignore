@@ -1,5 +1,3 @@
-../Release/*
-../Debug/*
-../.metadata/*
 *.d
 *.o
+
